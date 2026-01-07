@@ -3,4 +3,12 @@ name = "datatracker"
 version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "click>=8.3.1",
+]
+
+[project.scripts]
+dt = "data_tracker.cli:cli"
+
+[tool.uv]
+package = true

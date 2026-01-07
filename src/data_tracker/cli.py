@@ -1,0 +1,13 @@
+import data_tracker.commands as commands
+import click
+
+@click.group()
+def cli() -> None:
+    """Entry point function for the Data Tracker CLI"""
+    pass
+
+cli.add_command(commands.init)
+cli.add_command(commands.add)
+cli.add_command(commands.remove)
+cli.add_command(commands.list_data)
+cli.add_command(commands.history)
