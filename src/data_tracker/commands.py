@@ -17,9 +17,15 @@ def init() -> None:
 
 @click.command()
 @click.argument("data_path")
-def add() -> None:
+@click.option("--title", default=None, help="Name of the dataset")
+@click.option("--version", default=1, type=int, help="Version number of the data being added")
+def add(data_path: str, title: str, version: int) -> None:
     """Add new data to the tracker"""
-    click.echo("adding data")
+    try:
+        core.add_data(data_path, version)
+    except Exception as e:
+        click.secho(f"Error: {e}", fg="red", err=True)
+        sys.exit(1)
 
 @click.command()
 @click.argument("data_id")
