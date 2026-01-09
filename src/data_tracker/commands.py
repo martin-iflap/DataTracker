@@ -22,7 +22,11 @@ def init() -> None:
 def add(data_path: str, title: str, version: int) -> None:
     """Add new data to the tracker"""
     try:
-        core.add_data(data_path, version)
+        success, message = core.add_data(data_path, title, version)
+        if success:
+            click.echo(message)
+        else:
+            click.secho(message, fg="red")
     except Exception as e:
         click.secho(f"Error: {e}", fg="red", err=True)
         sys.exit(1)

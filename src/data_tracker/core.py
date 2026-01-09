@@ -1,49 +1,30 @@
+import data_tracker.db_manager as db
 from typing import Tuple
 import hashlib
 import sqlite3
 import os
 
-# add original file path to database?
+
 def initialize_tracker() -> Tuple[bool, str]:
     """Initialize the .data_tracker directory and config.json file
     Returns: Tuple[bool, str]: (success, message)
     """
+    tracker_path = find_data_tracker_root()
+    if tracker_path:
+        return False, f"Data tracker already initialized at {tracker_path}"
+
     tracker_path = os.path.join(os.getcwd(), ".data_tracker")
-    if os.path.exists(tracker_path):
-        return False, "Data tracker already initialized"
     try:
         os.makedirs(os.path.join(tracker_path, "objects"))
-
         db_path = os.path.join(tracker_path, "tracker.db")
-        try:
-            with sqlite3.connect(db_path) as conn:
-                conn.execute("""
-                CREATE TABLE IF NOT EXISTS datasets(
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    name TEXT UNIQUE
-                );
-                CREATE TABLE IF NOT EXISTS objects (
-                    hash TEXT PRIMARY KEY,
-                    size INTEGER,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-                CREATE TABLE IF NOT EXISTS versions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    dataset_id INTEGER NOT NULL,
-                    object_hash TEXT NOT NULL,
-                    version INTEGER NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (dataset_id) REFERENCES datasets(id),
-                    FOREIGN KEY (object_hash) REFERENCES objects(hash)
-                );
-                """)
 
-            return True, "Data tracker initialized successfully"
-        except sqlite3.Error as e:
-            raise Exception(f"Database initialization error: {e}")
+        success, message = db.initialize_database(db_path)
+        return success, message
+
+    except sqlite3.Error as e:
+        return False, f"Database initialization error: {e}"
     except OSError as e:
-        raise Exception(f"Failed to initialize data tracker: {e}")
+        return False, f"Failed to create essential directories: {e}"
 
 def add_data(data_path: str, dataset_name: str, version: int) -> Tuple[bool, str]:
     """Add new data to be tracked into the .data_tracker/data directory
@@ -53,6 +34,8 @@ def add_data(data_path: str, dataset_name: str, version: int) -> Tuple[bool, str
      - if no name is provided, generate a default name (dataset<num>)
     Returns: Tuple[bool, str]: (success, message)
     """
+    data_path = os.path.abspath(data_path)
+
     if not os.path.exists(data_path):
         return False, f"Data path {data_path} does not exist"
 
@@ -76,31 +59,19 @@ def add_data(data_path: str, dataset_name: str, version: int) -> Tuple[bool, str
     except OSError as e:
         return False, f"Failed to add data: {e}"
 
+    db_path = os.path.join(tracker_path, "tracker.db")
+    if not os.path.isfile(db_path):
+        return False, "Data tracker database not found. Please run 'dt init' first."
+
     try:
-        db_path = os.path.join(tracker_path, "tracker.db")
-        if not os.path.isfile(db_path):
-            return False, "Data tracker database not found. Please run 'dt init' first."
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
-
-            if dataset_name is None:
-                cursor.execute("SELECT id FROM datasets ORDER BY id DESC LIMIT 1")
-                row = cursor.fetchone()
-                next_num = (row[0] + 1) if row else 1
-                dataset_name = f"dataset-{next_num}"
-
-            cursor.execute("INSERT INTO datasets (name) VALUES (?)", (dataset_name,))
-            data_set_id = cursor.lastrowid
-
+        with db.open_database(db_path) as conn:
+            dataset_id = db.insert_dataset(conn, dataset_name)
             file_size = os.path.getsize(data_path)
-            cursor.execute("INSERT OR IGNORE INTO objects (hash, size) VALUES (?, ?)",
-                           (file_hash, file_size))
-
-            cursor.execute("INSERT OR IGNORE INTO versions (dataset_id, object_hash, version) VALUES (?, ?, ?)",
-                           (data_set_id, file_hash, version))
+            db.insert_object(conn, file_hash, file_size)
+            db.insert_version(conn, dataset_id, file_hash, version, data_path)
     except sqlite3.Error as e:
         return False, f"Database error while adding data: {e}"
-
+    # later add file deletion if database adding fails but file copied
     return True, f"Data at {data_path} added successfully"
 
 def hash_file(file_path: str) -> str | None:
