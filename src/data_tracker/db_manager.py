@@ -19,7 +19,8 @@ def initialize_database(db_path: str) -> Tuple[bool, str]:
                      CREATE TABLE IF NOT EXISTS datasets(
                          id INTEGER PRIMARY KEY AUTOINCREMENT,
                          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                         name TEXT UNIQUE
+                         name TEXT UNIQUE,
+                         notes TEXT
         )""")
         conn.execute("""
                      CREATE TABLE IF NOT EXISTS objects(
@@ -34,6 +35,7 @@ def initialize_database(db_path: str) -> Tuple[bool, str]:
                          object_hash TEXT NOT NULL,
                          version INTEGER NOT NULL,
                          original_path TEXT,
+                         message TEXT,
                          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                          FOREIGN KEY (dataset_id) REFERENCES datasets (id),
                          FOREIGN KEY (object_hash) REFERENCES objects (hash)
@@ -42,7 +44,7 @@ def initialize_database(db_path: str) -> Tuple[bool, str]:
         conn.commit()
     return True, "Data tracker initialized successfully"
 
-def insert_dataset(conn: sqlite3.Connection, name: str) -> int:
+def insert_dataset(conn: sqlite3.Connection, name: str, notes: str) -> int:
     """Insert a new dataset into the dataset table of the tracker.db database"""
     cursor = conn.cursor()
     if name is None:
@@ -51,7 +53,7 @@ def insert_dataset(conn: sqlite3.Connection, name: str) -> int:
         next_num = (row[0] + 1) if row else 1
         name = f"dataset-{next_num}"
 
-    cursor.execute("INSERT INTO datasets (name) VALUES (?)", (name,))
+    cursor.execute("INSERT INTO datasets (name, notes) VALUES (?, ?)", (name, notes))
     return cursor.lastrowid
 
 def insert_object(conn: sqlite3.Connection, file_hash: str, size: int) -> None:
@@ -70,6 +72,23 @@ def get_all_datasets(db_path: str) -> list[sqlite3.Row]:
     """Retrieve all datasets from the datasets table of the tracker.db"""
     with open_database(db_path) as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM datasets ORDER BY id ASC")
-        rows = cursor.fetchall()
-    return rows
+        cursor.execute("SELECT * FROM datasets ORDER BY id")
+        return cursor.fetchall()
+
+def get_dataset_history(db_path: str, dataset_id: int, name: str) -> list[sqlite3.Row]:
+    """Retrieve all the version information for a specific dataset from the tracker.db version table"""
+    with open_database(db_path) as conn:
+        cursor = conn.cursor()
+
+        if not dataset_id:
+            cursor.execute("SELECT id FROM datasets WHERE name = ?", (name,))
+            id_row = cursor.fetchone()
+            if id_row is None:
+                return []
+            dataset_id = id_row['id']
+
+        cursor.execute("""SELECT id, object_hash, version, original_path, message, created_at
+                          FROM versions WHERE dataset_id = ? ORDER BY version""",
+                       (dataset_id,))
+        return cursor.fetchall()
+

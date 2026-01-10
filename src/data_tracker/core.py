@@ -9,9 +9,9 @@ def initialize_tracker() -> Tuple[bool, str]:
     """Initialize the .data_tracker directory and config.json file
     Returns: Tuple[bool, str]: (success, message)
     """
-    tracker_path = find_data_tracker_root()
-    if tracker_path:
-        return False, f"Data tracker already initialized at {tracker_path}"
+    existing_tracker = find_data_tracker_root()
+    if existing_tracker:
+        return False, f"Data tracker already initialized at {existing_tracker}"
 
     tracker_path = os.path.join(os.getcwd(), ".data_tracker")
     try:
@@ -26,7 +26,7 @@ def initialize_tracker() -> Tuple[bool, str]:
     except OSError as e:
         return False, f"Failed to create essential directories: {e}"
 
-def add_data(data_path: str, dataset_name: str, version: int) -> Tuple[bool, str]:
+def add_data(data_path: str, title: str, version: int, notes: str) -> Tuple[bool, str]:
     """Add new data to be tracked into the .data_tracker/data directory
      - compute the hash of the file and use it as the unique identifier
      - copy file to the .data_tracker/objects directory and name it with its hash
@@ -65,10 +65,11 @@ def add_data(data_path: str, dataset_name: str, version: int) -> Tuple[bool, str
 
     try:
         with db.open_database(db_path) as conn:
-            dataset_id = db.insert_dataset(conn, dataset_name)
+            dataset_id = db.insert_dataset(conn, title, notes)
             file_size = os.path.getsize(data_path)
             db.insert_object(conn, file_hash, file_size)
             db.insert_version(conn, dataset_id, file_hash, version, data_path)
+            conn.commit()
     except sqlite3.Error as e:
         return False, f"Database error while adding data: {e}"
     # later add file deletion if database adding fails but file copied
@@ -122,10 +123,34 @@ def list_data() -> Tuple[bool, str]:
 
         output_lines = ["Tracked Datasets:"]
         for dataset in all_datasets:
-            output_lines.append(f"ID: {dataset['id']},  Name: {dataset['name']},  Created At: {dataset['created_at']}")
+            output_lines.append(f"ID: {dataset['id']},  Name: {dataset['name']},  "
+                                f"Created At: {dataset['created_at']},  Notes: {dataset['notes']}")
 
         return True, "\n".join(output_lines)
     except sqlite3.Error as e:
         return False, f"Database error while listing data: {e}"
     except OSError as e:
         return False, f"Filesystem error while listing data: {e}"
+
+def get_history(data_id: int, name: str) -> Tuple[bool, str]:
+    """Show history of versions with additional info for a specific data id or name"""
+    try:
+        tracker_path = find_data_tracker_root()
+        if tracker_path is None:
+            return False, "Data tracker is not initialized. Please run 'dt init' first."
+
+        entire_history = db.get_dataset_history(os.path.join(tracker_path, "tracker.db"), data_id, name)
+        if not entire_history:
+            return True, "No history found for the specified dataset."
+
+        output_lines = ["Dataset History:"]
+        for record in entire_history:
+            output_lines.append(
+                f"Version: {record['version']}, ID: {record['id']}, Object Hash: {record['object_hash']}, "
+                f"Original Path: {record['original_path']}, Added At: {record['created_at']},   Message: {record['message']}"
+            )
+        return True, "\n".join(output_lines)
+    except sqlite3.Error as e:
+        return False, f"Database error while retrieving history: {e}"
+    except OSError as e:
+        return False, f"Filesystem error while retrieving history: {e}"
