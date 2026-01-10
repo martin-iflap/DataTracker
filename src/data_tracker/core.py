@@ -105,3 +105,27 @@ def find_data_tracker_root(start_path: str = None) -> str | None:
             return None
         current_path = parent
 
+def list_data() -> Tuple[bool, str]:
+    """List all tracked data files in the data tracker.db datasets table
+     - use the db_manager.py get_all_datasets function to retrieve datasets
+     - format the output for display and return as a string
+    Returns: Tuple[bool, str]: (success, message)
+    """
+    try:
+        tracker_path = find_data_tracker_root() # check the find data tracker error handling
+        if tracker_path is None:
+            return False, "Data tracker is not initialized. Please run 'dt init' first."
+
+        all_datasets = db.get_all_datasets(os.path.join(tracker_path, "tracker.db"))
+        if not all_datasets:
+            return True, "No datasets tracked yet."
+
+        output_lines = ["Tracked Datasets:"]
+        for dataset in all_datasets:
+            output_lines.append(f"ID: {dataset['id']},  Name: {dataset['name']},  Created At: {dataset['created_at']}")
+
+        return True, "\n".join(output_lines)
+    except sqlite3.Error as e:
+        return False, f"Database error while listing data: {e}"
+    except OSError as e:
+        return False, f"Filesystem error while listing data: {e}"

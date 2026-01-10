@@ -66,4 +66,10 @@ def insert_version(conn: sqlite3.Connection, data_set_id: int,
         "INSERT OR IGNORE INTO versions (dataset_id, object_hash, version, original_path) VALUES (?, ?, ?, ?)",
         (data_set_id, object_hash, version, data_path))
 
-
+def get_all_datasets(db_path: str) -> list[sqlite3.Row]:
+    """Retrieve all datasets from the datasets table of the tracker.db"""
+    with open_database(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM datasets ORDER BY id ASC")
+        rows = cursor.fetchall()
+    return rows
