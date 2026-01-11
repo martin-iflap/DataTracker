@@ -37,10 +37,18 @@ def add(data_path: str, title: str, version: int, notes: str) -> None:
 @click.option("--id", type=int, default=None, help="ID of the dataset to update")
 @click.option("--name", default=None, help="Name of the dataset to update")
 @click.option("--version", type=int, default=None, help="Version number")
-@click.option("--m", default=None, help="Message describing the update")
-def update(data_path: str, id: int, name: str, version: int, m: str) -> None:
+@click.option("-m", "--message", default=None, help="Message describing the update")
+def update(data_path: str, id: int, name: str, version: int, message: str) -> None:
     """Add a new version of existing dataset to the tracker"""
-    raise NotImplementedError("command not implemented yet")
+    try:
+        success, result_message = core.update_data(data_path, id, name, version, message)
+        if success:
+            click.echo(result_message)
+        else:
+            click.secho(result_message, fg="red")
+    except Exception as e:
+        click.secho(f"Error: {e}", fg="red", err=True)
+        sys.exit(1)
 
 @click.command()
 @click.option("--id", type=int, default=None, help="ID of the dataset to remove")

@@ -62,11 +62,12 @@ def insert_object(conn: sqlite3.Connection, file_hash: str, size: int) -> None:
                    (file_hash, size))
 
 def insert_version(conn: sqlite3.Connection, data_set_id: int,
-                   object_hash: str, version: int, data_path: str) -> None:
+                   object_hash: str, version: int,
+                   data_path: str, message: str = None) -> None:
     """Insert a new version into the versions table of the tracker.db database"""
     conn.execute(
-        "INSERT OR IGNORE INTO versions (dataset_id, object_hash, version, original_path) VALUES (?, ?, ?, ?)",
-        (data_set_id, object_hash, version, data_path))
+        "INSERT OR IGNORE INTO versions (dataset_id, object_hash, version, original_path, message) VALUES (?, ?, ?, ?, ?)",
+        (data_set_id, object_hash, version, data_path, message))
 
 def get_all_datasets(db_path: str) -> list[sqlite3.Row]:
     """Retrieve all datasets from the datasets table of the tracker.db"""
@@ -92,3 +93,27 @@ def get_dataset_history(db_path: str, dataset_id: int, name: str) -> list[sqlite
                        (dataset_id,))
         return cursor.fetchall()
 
+def dataset_exists(conn: sqlite3.Connection, dataset_id: int, name: str) -> bool:
+    """Check if a dataset exists in the datasets tracker.db table by its ID or name"""
+    cursor = conn.cursor()
+    if dataset_id:
+        cursor.execute("SELECT 1 FROM datasets WHERE id = ?", (dataset_id,))
+    else:
+        cursor.execute("SELECT 1 FROM datasets WHERE name = ?", (name,))
+    return cursor.fetchone() is not None
+
+def get_next_version(conn: sqlite3.Connection, dataset_id: int, name: str) -> int:
+    """Get the next version number for a dataset with a given ID or name"""
+    cursor = conn.cursor()
+
+    if not dataset_id:
+        cursor.execute("SELECT id FROM datasets WHERE name = ?", (name,))
+        row = cursor.fetchone()
+        if row is None:
+            return 1
+        dataset_id = row['id']
+
+    cursor.execute("SELECT MAX(version) FROM versions WHERE dataset_id = ?", (dataset_id,))
+    result = cursor.fetchone()
+    max_version = result[0] if result[0] is not None else 0
+    return max_version + 1
