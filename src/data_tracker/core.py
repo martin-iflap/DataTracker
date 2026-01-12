@@ -195,3 +195,44 @@ def update_data(data_path: str, data_id: int, name: str, version: int, message: 
         return False, f"Database error while updating data: {e}"
     except OSError as e:
         return False, f"Filesystem error while updating data: {e}"
+
+def remove_data(data_id: int, name: str) -> Tuple[bool, str]:
+    """Remove data from the tracker by its ID or name
+     - Delete object files from the objects table and return their hashes
+     - Delete versions associated with the dataset
+     - Delete the dataset entry from the datasets table
+     - Remove object files from .data_tracker/objects using the returned hashes
+    """
+    hashes_to_remove = []
+    try:
+        tracker_path = find_data_tracker_root()
+        if tracker_path is None:
+            return False, "Data tracker is not initialized. Please run 'dt init' first."
+
+        with db.open_database(os.path.join(tracker_path, "tracker.db")) as conn:
+            exists = db.dataset_exists(conn, data_id, name)
+            if not exists:
+                return False, "Specified dataset does not exist."
+
+            if data_id is None:
+                data_id = db.get_id_from_name(conn, name)
+
+            db.delete_versions(conn, data_id)
+            hashes_to_remove = db.delete_object(conn, data_id)
+            db.delete_dataset(conn, data_id)
+            conn.commit()
+
+        for file_hash in hashes_to_remove:
+            object_path = os.path.join(tracker_path, "objects", file_hash)
+            if os.path.exists(object_path):
+                try:
+                    os.remove(object_path)
+                except OSError as e:
+                    return False, f"Failed to remove object file {object_path}: {e}"
+
+        return True, "Data removed successfully"
+    except sqlite3.Error as e:
+        return False, f"Database error while removing data: {e}"
+    except OSError as e:
+        return False, f"Filesystem error while removing data: {e}"
+

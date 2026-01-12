@@ -40,6 +40,9 @@ def add(data_path: str, title: str, version: int, notes: str) -> None:
 @click.option("-m", "--message", default=None, help="Message describing the update")
 def update(data_path: str, id: int, name: str, version: int, message: str) -> None:
     """Add a new version of existing dataset to the tracker"""
+    if bool(id) == bool(name):
+        raise click.UsageError("Provide exactly one of --id or --name")
+
     try:
         success, result_message = core.update_data(data_path, id, name, version, message)
         if success:
@@ -55,7 +58,18 @@ def update(data_path: str, id: int, name: str, version: int, message: str) -> No
 @click.option("--name", default=None, help="Name of the dataset to remove")
 def remove(id: int, name: str) -> None:
     """Remove data from the tracker"""
-    click.echo("removing data")
+    if bool(id) == bool(name):
+        raise click.UsageError("Provide exactly one of --id or --name")
+
+    try:
+        success, message = core.remove_data(id, name)
+        if success:
+            click.echo(message)
+        else:
+            click.secho(message, fg="red")
+    except Exception as e:
+        click.secho(f"Error: {e}", fg="red", err=True)
+        sys.exit(1)
 
 @click.command()
 def ls() -> None:
@@ -92,3 +106,4 @@ def history(id: int, name: str) -> None:
 # Handle all the possible add data cases like data already added but now with different name...
 # Keep an eye on the error handling and messages to the user and perhaps add logging
 # Consider edge cases like adding directories, large files, unsupported file types etc.
+# What if there are 2 versions of the same file with same object file - do not allow same object 2 versions
