@@ -2,6 +2,7 @@ import data_tracker.db_manager as db
 from typing import Tuple
 import hashlib
 import sqlite3
+import shutil
 import os
 
 
@@ -20,7 +21,6 @@ def initialize_tracker() -> Tuple[bool, str]:
 
         success, message = db.initialize_database(db_path)
         return success, message
-
     except sqlite3.Error as e:
         return False, f"Database initialization error: {e}"
     except OSError as e:
@@ -34,36 +34,37 @@ def add_data(data_path: str, title: str, version: int, notes: str) -> Tuple[bool
      - if no name is provided, generate a default name (dataset<num>)
     Returns: Tuple[bool, str]: (success, message)
     """
-    data_path = os.path.abspath(data_path)
-
-    if not os.path.exists(data_path):
-        return False, f"Data path {data_path} does not exist"
-
-    tracker_path = find_data_tracker_root()
-    if tracker_path is None:
-        return False, "Data tracker is not initialized. Please run 'dt init' first."
-
-    file_hash = hash_file(data_path)
-    if file_hash is None:
-        return False, f"Failed to compute hash for {data_path}"
-
     try:
+        data_path = os.path.abspath(data_path)
+
+        tracker_path = find_data_tracker_root()
+        if tracker_path is None:
+            return False, "Data tracker is not initialized. Please run 'dt init' first."
+
+        file_hash = hash_file(data_path)
+        if file_hash is None:
+            return False, f"Failed to compute hash for {data_path}"
+
         _copy_file_to_objects(tracker_path, data_path, file_hash)
+
+        db_path = os.path.join(tracker_path, "tracker.db")
+
+        try:
+            with db.open_database(db_path) as conn:
+                dataset_id = db.insert_dataset(conn, title, notes)
+                file_size = os.path.getsize(data_path)
+                db.insert_object(conn, file_hash, file_size)
+                db.insert_version(conn, dataset_id, file_hash, version, data_path)
+                conn.commit()
+        except sqlite3.Error as e:
+            removed, err = _remove_file_object(tracker_path, file_hash)
+            if not removed:
+                return False, f"Failed to remove object file {file_hash}: {err} | After database error: {e}"
+            return False, f"Database error while adding data: {e}"
+    except FileNotFoundError:
+        return False, f"Data path {data_path} does not exist"
     except OSError as e:
-        return False, f"Failed to copy file to objects directory: {e}"
-
-    db_path = os.path.join(tracker_path, "tracker.db")
-
-    try:
-        with db.open_database(db_path) as conn:
-            dataset_id = db.insert_dataset(conn, title, notes)
-            file_size = os.path.getsize(data_path)
-            db.insert_object(conn, file_hash, file_size)
-            db.insert_version(conn, dataset_id, file_hash, version, data_path)
-            conn.commit()
-    except sqlite3.Error as e:
-        return False, f"Database error while adding data: {e}"
-    # later add file deletion if database adding fails but file copied
+        return False, f"File operation failed: {e}"
     return True, f"Data at {data_path} added successfully"
 
 def _copy_file_to_objects(tracker_path: str, data_path: str, file_hash: str) -> None:
@@ -71,9 +72,7 @@ def _copy_file_to_objects(tracker_path: str, data_path: str, file_hash: str) -> 
     save_path = os.path.join(tracker_path, "objects", file_hash)
     if os.path.isfile(data_path):
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        with open(data_path, "rb") as src_file:
-            with open(save_path, "wb") as dest_file:
-                dest_file.write(src_file.read())
+        shutil.copy2(data_path, save_path)
     else:
         raise OSError("Directory handling not implemented yet")
 
@@ -82,13 +81,10 @@ def hash_file(file_path: str) -> str | None:
     if not os.path.isfile(file_path):
         return None
     sha256_hash = hashlib.sha256()
-    try:
-        with open(file_path, "rb") as f:
-            for chunk in iter(lambda: f.read(8192), b""):
-                sha256_hash.update(chunk)
-        return sha256_hash.hexdigest()
-    except OSError:
-        return None
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            sha256_hash.update(chunk)
+    return sha256_hash.hexdigest()
 
 def find_data_tracker_root(start_path: str = None) -> str | None:
     """Find the .data_tracker directory by searching upwards from the start_path
@@ -118,7 +114,7 @@ def list_data() -> Tuple[bool, str]:
     Returns: Tuple[bool, str]: (success, message)
     """
     try:
-        tracker_path = find_data_tracker_root() # check the find data tracker error handling
+        tracker_path = find_data_tracker_root()
         if tracker_path is None:
             return False, "Data tracker is not initialized. Please run 'dt init' first."
 
@@ -126,6 +122,7 @@ def list_data() -> Tuple[bool, str]:
         if not all_datasets:
             return True, "No datasets tracked yet."
 
+        all_datasets = sorted(all_datasets, key=lambda x: x['id'])
         output_lines = ["Tracked Datasets:"]
         for dataset in all_datasets:
             output_lines.append(f"ID: {dataset['id']},  Name: {dataset['name']},  "
@@ -183,8 +180,11 @@ def update_data(data_path: str, data_id: int, name: str, version: int, message: 
             if not exists:
                 return False, "Specified dataset does not exist."
 
+            if not data_id:
+                data_id = db.get_id_from_name(conn, name)
+
             if version is None:
-                version = db.get_next_version(conn, data_id, name)
+                version = db.get_next_version(conn, data_id)
 
             file_size = os.path.getsize(data_path)
             db.insert_object(conn, file_hash, file_size)
@@ -223,12 +223,9 @@ def remove_data(data_id: int, name: str) -> Tuple[bool, str]:
             conn.commit()
 
         for file_hash in hashes_to_remove:
-            object_path = os.path.join(tracker_path, "objects", file_hash)
-            if os.path.exists(object_path):
-                try:
-                    os.remove(object_path)
-                except OSError as e:
-                    return False, f"Failed to remove object file {object_path}: {e}"
+            removed, err = _remove_file_object(tracker_path, file_hash)
+            if not removed:
+                    return False, f"Failed to remove object file {file_hash}: {err}"
 
         return True, "Data removed successfully"
     except sqlite3.Error as e:
@@ -236,3 +233,15 @@ def remove_data(data_id: int, name: str) -> Tuple[bool, str]:
     except OSError as e:
         return False, f"Filesystem error while removing data: {e}"
 
+def _remove_file_object(tracker_path: str, file_hash: str) -> Tuple[bool, str]:
+    """Delete the file object from the objects directory by its hash (name)
+     - return True if successful, False otherwise
+    """
+    object_path = os.path.join(tracker_path, "objects", file_hash)
+    try:
+        os.remove(object_path)
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        return False, f"Failed to remove object file {object_path}: {e}"
+    return True, ""

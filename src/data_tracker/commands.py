@@ -19,7 +19,7 @@ def init() -> None:
 @click.argument("data_path")
 @click.option("--title", default=None, help="Title of the dataset")
 @click.option("--version", default=1, type=int, help="Version number of the data being added")
-@click.option("--notes", default=None, help="Additional notes about the data")
+@click.option("-n", "--notes", default=None, help="Additional notes about the data")
 def add(data_path: str, title: str, version: int, notes: str) -> None:
     """Add new data to the tracker"""
     try:
@@ -103,7 +103,6 @@ def history(id: int, name: str) -> None:
 
 
 
-# Handle all the possible add data cases like data already added but now with different name...
-# Keep an eye on the error handling and messages to the user and perhaps add logging
-# Consider edge cases like adding directories, large files, unsupported file types etc.
-# What if there are 2 versions of the same file with same object file - do not allow same object 2 versions
+# do not allow same dataset just different name?
+# Consider edge cases like adding directories, unsupported file types etc.
+# do not allow updating unchanged data, create db get path function?

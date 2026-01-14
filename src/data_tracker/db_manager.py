@@ -73,7 +73,7 @@ def get_all_datasets(db_path: str) -> list[sqlite3.Row]:
     """Retrieve all datasets from the datasets table of the tracker.db"""
     with open_database(db_path) as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM datasets ORDER BY id")
+        cursor.execute("SELECT * FROM datasets")
         return cursor.fetchall()
 
 def get_dataset_history(db_path: str, dataset_id: int, name: str) -> list[sqlite3.Row]:
@@ -107,17 +107,9 @@ def dataset_exists(conn: sqlite3.Connection, dataset_id: int, name: str) -> bool
         cursor.execute("SELECT 1 FROM datasets WHERE name = ?", (name,))
     return cursor.fetchone() is not None
 
-def get_next_version(conn: sqlite3.Connection, dataset_id: int, name: str) -> int:
-    """Get the next version number for a dataset with a given ID or name"""
+def get_next_version(conn: sqlite3.Connection, dataset_id: int) -> int:
+    """Get the next version number for a dataset with a given ID"""
     cursor = conn.cursor()
-
-    if not dataset_id:
-        cursor.execute("SELECT id FROM datasets WHERE name = ?", (name,))
-        row = cursor.fetchone()
-        if row is None:
-            return 1
-        dataset_id = row['id']
-
     cursor.execute("SELECT MAX(version) FROM versions WHERE dataset_id = ?", (dataset_id,))
     result = cursor.fetchone()
     max_version = result[0] if result[0] is not None else 0
