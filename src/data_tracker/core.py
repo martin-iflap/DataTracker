@@ -1,8 +1,11 @@
 import data_tracker.db_manager as db
 from typing import Tuple
-import hashlib
+import subprocess
+import tempfile
 import sqlite3
+import hashlib
 import shutil
+import sys
 import os
 
 
@@ -34,7 +37,7 @@ def add_data(data_path: str, title: str, version: int, notes: str) -> Tuple[bool
      - if no name is provided, generate a default name (dataset<num>)
     Returns: Tuple[bool, str]: (success, message)
     """
-    try:
+    try: # add a check of db.dataset_exists before copying file
         data_path = os.path.abspath(data_path)
 
         tracker_path = find_data_tracker_root()
@@ -245,3 +248,53 @@ def _remove_file_object(tracker_path: str, file_hash: str) -> Tuple[bool, str]:
     except OSError as e:
         return False, f"Failed to remove object file {object_path}: {e}"
     return True, ""
+
+def open_dataset_version(data_id: int, name: str, version_num: int) -> Tuple[bool, str]:
+    """Open a dataset version by copying it to a temp file with proper extension
+    """
+    try:
+        tracker_path = find_data_tracker_root()
+        if tracker_path is None:
+            return False, "Data tracker is not initialized. Please run 'dt init' first."
+
+        all_versions = db.get_dataset_history(os.path.join(tracker_path, "tracker.db"), data_id, name)
+        if not all_versions:
+            return False, "No history found for the specified dataset."
+
+        target_version = next((v for v in all_versions if v['version'] == version_num), None)
+        if target_version is None:
+            return False, f"Version {version_num} not found for the specified dataset."
+        hash_name = target_version['object_hash']
+        original_filepath = target_version['original_path']
+
+        objects_path = os.path.join(tracker_path, "objects", hash_name)
+
+        if not os.path.exists(objects_path):
+            raise FileNotFoundError(f"Dataset version not found: {hash_name}")
+
+        ext = os.path.splitext(original_filepath)[-1]
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as temp_file:
+            temp_path = temp_file.name
+            shutil.copy2(objects_path, temp_path)
+        try:
+            open_file(temp_path)
+            return True, f"Opened dataset version {version_num} successfully."
+        except OSError as e:
+            os.unlink(temp_path)
+            raise
+    except sqlite3.Error as e:
+        return False, f"Database error while opening dataset version: {e}"
+
+def open_file(file_path: str) -> None:
+    """Open a file using the default application based on the OS"""
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"File not found: {file_path}")
+    try:
+        if sys.platform == "win32": # Windows
+            os.startfile(file_path)
+        elif sys.platform == "darwin":  # macOS
+            subprocess.run(["open", file_path], check=True)
+        else:  # Linux and other Unix-like systems
+            subprocess.run(["xdg-open", file_path], check=True)
+    except Exception as e:
+        raise OSError(f"Failed to open file: {e}")
