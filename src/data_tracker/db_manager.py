@@ -107,6 +107,19 @@ def dataset_exists(conn: sqlite3.Connection, dataset_id: int, name: str) -> bool
         cursor.execute("SELECT 1 FROM datasets WHERE name = ?", (name,))
     return cursor.fetchone() is not None
 
+def hash_exists(conn: sqlite3.Connection, file_hash: str) -> str | None:
+    """Check if an object hash exists and if yes, return its version info in str else None"""
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM versions WHERE object_hash = ?", (file_hash,))
+    row = cursor.fetchone()
+    if row is None:
+        return None
+    else:
+        version_info: str = (
+            f"Version: {row['version']}, ID: {row['id']}, Object Hash: {row['object_hash']}, "
+            f"Original Path: {row['original_path']}, Added At: {row['created_at']},   Message: {row['message']}")
+        return version_info
+
 def get_next_version(conn: sqlite3.Connection, dataset_id: int) -> int:
     """Get the next version number for a dataset with a given ID"""
     cursor = conn.cursor()

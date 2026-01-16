@@ -122,8 +122,6 @@ def view(id: int, name: str, version: int) -> None:
         sys.exit(1)
 
 
-# do not allow same dataset just different name?
 # Consider edge cases like adding directories, unsupported file types etc.
-# do not allow updating unchanged data, create db get path function?
-# add open file and compare dataset versions
-# check if object is not being used before removing in add data and add remove to update data except block
+# do not allow updating unchanged data, create get_db_path function?
+# add compare dataset versions
