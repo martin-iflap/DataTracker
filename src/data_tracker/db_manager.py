@@ -41,6 +41,15 @@ def initialize_database(db_path: str) -> Tuple[bool, str]:
                          FOREIGN KEY (object_hash) REFERENCES objects (hash)
         )
         """)
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS files(
+            id INTEGER PRIMARY KEY,
+            version_id INTEGER NOT NULL,
+            object_hash TEXT NOT NULL,
+            relative_path TEXT NOT NULL,
+            FOREIGN KEY(version_id) REFERENCES versions(id),
+            FOREIGN KEY(object_hash) REFERENCES objects(hash)
+        )""")
         conn.commit()
     return True, "Data tracker initialized successfully"
 
@@ -65,9 +74,18 @@ def insert_version(conn: sqlite3.Connection, data_set_id: int,
                    object_hash: str, version: int,
                    data_path: str, message: str = None) -> None:
     """Insert a new version into the versions table of the tracker.db database"""
-    conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         "INSERT OR IGNORE INTO versions (dataset_id, object_hash, version, original_path, message) VALUES (?, ?, ?, ?, ?)",
         (data_set_id, object_hash, version, data_path, message))
+    return cursor.lastrowid
+
+def insert_files(conn: sqlite3.Connection, version_id: int, object_hash: str,
+                 relative_path: str) -> None:
+    """Insert a new file into the files table of the tracker.db database"""
+    conn.execute(
+        "INSERT INTO files (version_id, object_hash, relative_path) VALUES (?, ?, ?)",
+        (version_id, object_hash, relative_path))
 
 def get_all_datasets(db_path: str) -> list[sqlite3.Row]:
     """Retrieve all datasets from the datasets table of the tracker.db"""

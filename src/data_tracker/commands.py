@@ -124,4 +124,4 @@ def view(id: int, name: str, version: int) -> None:
 
 # Consider edge cases like adding directories, unsupported file types etc.
 # do not allow updating unchanged data, create get_db_path function?
-# add compare dataset versions
+# add compare dataset versions, object still gets deleted on error in add/update data
