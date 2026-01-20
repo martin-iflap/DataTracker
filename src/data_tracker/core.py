@@ -30,7 +30,7 @@ def initialize_tracker() -> Tuple[bool, str]:
         return False, f"Failed to create essential directories: {e}"
 
 def add_data(data_path: str, title: str, version: int, notes: str) -> Tuple[bool, str]:
-    """Addd new data file or folder to be tracked
+    """Add new data file or folder to be tracked
      - If file: adds single file with its hash
      - If folder: recursively adds all files preserving folder structure
      - Computes hash for each file and stores in objects directory
@@ -57,57 +57,73 @@ def add_data(data_path: str, title: str, version: int, notes: str) -> Tuple[bool
                     rel_path = os.path.relpath(filepath, data_path)
                     files_to_add.append((filepath, rel_path))
 
-        return _add_files_to_tracker(files_to_add, title, version, notes, tracker_path)
+        return _add_files_to_tracker(files_to_add, tracker_path, data_path,
+                                     title=title, version=version, notes=notes)
     except FileNotFoundError:
         return False, f"Data path {data_path} does not exist"
     except OSError as e:
         return False, f"File operation failed: {e}"
+    except ValueError as e:
+        return False, str(e)
 
-def _add_files_to_tracker(files: list[Tuple[str, str]], title: str, version: int,
-                          notes: str, tracker_path: str) -> Tuple[bool, str]:
+def _add_files_to_tracker(files: list[Tuple[str, str]], tracker_path: str,
+                          data_path: str, dataset_id: int = None, title: str = None,
+                          version: int = None, notes: str = None) -> Tuple[bool, str]:
     """Add multiple files to the data tracker in a single transaction
      - Creates dataset entry and inserts all files atomically
      - Each file gets hashed, copied to objects, and recorded in files table
      - `relative_path` preserves folder structure for later reconstruction
      - Warns about hash collisions but doesn't prevent insertion
     Returns: Tuple[bool, str]: (success, concatenated messages for all files)"""
-    return_message = ""
-    db_path = os.path.join(tracker_path, "tracker.db")
+    try:
+        return_message = ""
+        db_path = os.path.join(tracker_path, "tracker.db")
 
-    with db.open_database(db_path) as conn:
-        if title and db.dataset_exists(conn, None, title):
-            return False, f"Dataset with name '{title}' already exists."
-        dataset_id = db.insert_dataset(conn, title, notes)
+        with db.open_database(db_path) as conn:
+            if dataset_id is None:
+                if title and db.dataset_exists(conn, None, title):
+                    return False, f"Dataset with name '{title}' already exists."
+                dataset_id = db.insert_dataset(conn, title, notes)
+            else:
+                if version is None:
+                    version = db.get_next_version(conn, dataset_id)
 
-        for filepath, rel_path in files:
-            success_message = ""
-            file_hash = hash_file(filepath)
-            if file_hash is None:
-                return False, f"Failed to compute hash for {filepath}"
+            primary_hash = ""
+            if len(files) == 1:
+                primary_hash = hash_file(files[0][0])
+            else:
+                primary_hash = hash_directory(data_path)
 
-            exists_info = db.hash_exists(conn, file_hash)
-            if exists_info:
-                success_message = f"Warning: Version {exists_info} with same data already exists.\n"
+            duplicate_warning = db.hash_exists(conn, primary_hash)
+            if duplicate_warning:
+                return_message = f"Duplicate Warning! Version with same data already exists: {duplicate_warning}\n"
 
-            try:
-                _copy_file_to_objects(tracker_path, filepath, file_hash)
-            except OSError as exc:
-                return False, f"Failed to copy file to objects directory: {exc}"
+            version_id = db.insert_version(conn, dataset_id, primary_hash, version, data_path, notes)
 
-            try:
-                file_size = os.path.getsize(filepath)
-                db.insert_object(conn, file_hash, file_size)
-                version_id = db.insert_version(conn, dataset_id, file_hash, version, filepath)
-                db.insert_files(conn, version_id, file_hash, rel_path)
+            for filepath, rel_path in files:
+                try:
+                    file_hash = hash_file(filepath)
+                    _copy_file_to_objects(tracker_path, filepath, file_hash)
 
-                msg = f"{success_message}Data at {filepath} added successfully"
-                return_message += msg + "\n"
-            except sqlite3.Error as exc:
-                removed, err = _remove_file_object(tracker_path, file_hash)
-                if not removed:
-                    return False, f"Failed to remove object file {file_hash}: {err} | After database error: {exc}"
-                return False, f"Database error while adding data: {exc}"
-        conn.commit()
+                    file_size = os.path.getsize(filepath)
+                    db.insert_object(conn, file_hash, file_size)
+                    db.insert_files(conn, version_id, file_hash, rel_path)
+
+                    return_message += f"Data at {filepath} added successfully" # change to updated for update
+                except sqlite3.Error as exc:
+                    file_hash = hash_file(filepath) # is this needed?
+                    if not db.object_is_used(conn, file_hash):
+                        removed, err = _remove_file_object(tracker_path, file_hash)
+                        if not removed:
+                            return False, f"Failed to remove object file {file_hash}: {err} | After database error: {exc}"
+                    return False, f"Database error while adding data: {exc}"
+            conn.commit()
+    except sqlite3.Error as e:
+        return False, f"Database error while adding data: {e}"
+    except OSError as e:
+        return False, f"Filesystem error while adding data: {e}"
+    except Exception as e:
+        return False, f"Error while adding data: {e}"
     return True, return_message.strip()
 
 def _copy_file_to_objects(tracker_path: str, data_path: str, file_hash: str) -> None:
@@ -122,11 +138,31 @@ def _copy_file_to_objects(tracker_path: str, data_path: str, file_hash: str) -> 
 def hash_file(file_path: str) -> str | None:
     """Compute the hash of a file for versioning using SHA256"""
     if not os.path.isfile(file_path):
-        return None
+        raise ValueError(f"{file_path} is not a valid file")
     sha256_hash = hashlib.sha256()
     with open(file_path, "rb") as f:
         for chunk in iter(lambda: f.read(8192), b""):
             sha256_hash.update(chunk)
+    return sha256_hash.hexdigest()
+
+def hash_directory(dir_path: str) -> str:
+    """Compute hash of entire directory based on file contents and structure
+     - Walk directory recursively but sort files and dirs for consistency
+    """
+    if not os.path.isdir(dir_path):
+        raise ValueError(f"{dir_path} is not a valid directory")
+    sha256_hash = hashlib.sha256()
+    for root, dirs, files in os.walk(dir_path):
+        dirs.sort()
+        files.sort()
+
+        for filename in files:
+            filepath = os.path.join(root, filename)
+            rel_path = os.path.relpath(filepath, dir_path)
+            sha256_hash.update(rel_path.encode('utf-8'))
+            with open(filepath, 'rb') as f:
+                for chunk in iter(lambda: f.read(8192), b""):
+                    sha256_hash.update(chunk)
     return sha256_hash.hexdigest()
 
 def find_data_tracker_root(start_path: str = None) -> str | None:
@@ -202,48 +238,34 @@ def get_history(data_id: int, name: str) -> Tuple[bool, str]:
 
 def update_data(data_path: str, data_id: int, name: str, version: int, message: str) -> Tuple[bool, str]:
     """Add a new version of existing dataset to the tracker and tracker.db"""
-    success_message = ""
     try:
-        data_path = os.path.abspath(data_path)
-
         tracker_path = find_data_tracker_root()
         if tracker_path is None:
             return False, "Data tracker is not initialized. Please run 'dt init' first."
+
+        data_path = os.path.abspath(data_path)
+        if not os.path.exists(data_path):
+            return False, f"Data path {data_path} does not exist"
         db_path = os.path.join(tracker_path, "tracker.db")
 
-        file_hash = hash_file(data_path)
-        if file_hash is None:
-            return False, f"Failed to compute hash for {data_path}"
+        if os.path.isfile(data_path):
+            files_to_add = [(data_path, os.path.basename(data_path))]
+        else:
+            files_to_add = []
+            for root, _, filenames in os.walk(data_path):
+                for f_name in filenames:
+                    filepath = os.path.join(root, f_name)
+                    rel_path = os.path.relpath(filepath, data_path)
+                    files_to_add.append((filepath, rel_path))
 
         with db.open_database(db_path) as conn:
-            exists_info = db.hash_exists(conn, file_hash)
-            if exists_info:
-                success_message = f"Warning: {exists_info} with same data already exists."
-
-        try:
-            _copy_file_to_objects(tracker_path, data_path, file_hash)
-        except OSError as e:
-            return False, f"Failed to copy file to objects directory: {e}"
-
-        with db.open_database(db_path) as conn:
-            exists = db.dataset_exists(conn, data_id, name)
-            if not exists:
-                return False, "Specified dataset does not exist."
-
+            if not db.dataset_exists(conn, data_id, name):
+                return False, "Dataset does not exist. Run 'dt add' first."
             if not data_id:
                 data_id = db.get_id_from_name(conn, name)
 
-            if version is None:
-                version = db.get_next_version(conn, data_id)
-
-            file_size = os.path.getsize(data_path)
-            db.insert_object(conn, file_hash, file_size)
-            db.insert_version(conn, data_id, file_hash, version, data_path, message)
-            conn.commit()
-        return_message = f"Data at {data_path} updated successfully"
-        if success_message:
-            return_message = f"{success_message}\n{return_message}"
-        return True, return_message
+        return _add_files_to_tracker(files_to_add, tracker_path, data_path,
+                                     dataset_id=data_id, version=version, notes=message)
     except sqlite3.Error as e:
         return False, f"Database error while updating data: {e}"
     except OSError as e:
@@ -270,6 +292,7 @@ def remove_data(data_id: int, name: str) -> Tuple[bool, str]:
             if data_id is None:
                 data_id = db.get_id_from_name(conn, name)
 
+            db.delete_files(conn, data_id)
             db.delete_versions(conn, data_id)
             hashes_to_remove = db.delete_object(conn, data_id)
             db.delete_dataset(conn, data_id)
@@ -328,7 +351,7 @@ def open_dataset_version(data_id: int, name: str, version_num: int) -> Tuple[boo
             shutil.copy2(objects_path, temp_path)
         try:
             open_file(temp_path)
-            return True, f"Opened dataset version {version_num} successfully."
+            return True, f"Opened dataset {data_id}, version {version_num} successfully."
         except OSError as e:
             os.unlink(temp_path)
             raise

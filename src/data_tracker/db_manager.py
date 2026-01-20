@@ -37,10 +37,8 @@ def initialize_database(db_path: str) -> Tuple[bool, str]:
                          original_path TEXT,
                          message TEXT,
                          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                         FOREIGN KEY (dataset_id) REFERENCES datasets (id),
-                         FOREIGN KEY (object_hash) REFERENCES objects (hash)
-        )
-        """)
+                         FOREIGN KEY (dataset_id) REFERENCES datasets (id)
+        )""")
         conn.execute("""
         CREATE TABLE IF NOT EXISTS files(
             id INTEGER PRIMARY KEY,
@@ -72,7 +70,7 @@ def insert_object(conn: sqlite3.Connection, file_hash: str, size: int) -> None:
 
 def insert_version(conn: sqlite3.Connection, data_set_id: int,
                    object_hash: str, version: int,
-                   data_path: str, message: str = None) -> None:
+                   data_path: str, message: str = None) -> int:
     """Insert a new version into the versions table of the tracker.db database"""
     cursor = conn.cursor()
     cursor.execute(
@@ -130,13 +128,10 @@ def hash_exists(conn: sqlite3.Connection, file_hash: str) -> str | None:
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM versions WHERE object_hash = ?", (file_hash,))
     row = cursor.fetchone()
-    if row is None:
-        return None
-    else:
-        version_info: str = (
-            f"Version: {row['version']}, ID: {row['id']}, Object Hash: {row['object_hash']}, "
-            f"Original Path: {row['original_path']}, Added At: {row['created_at']},   Message: {row['message']}")
-        return version_info
+    return (
+        f"Version: {row['version']},  Original Path: {row['original_path']},  "
+        f"Added At: {row['created_at']},  Message: {row['message']}"
+    ) if row else None
 
 def get_next_version(conn: sqlite3.Connection, dataset_id: int) -> int:
     """Get the next version number for a dataset with a given ID"""
@@ -145,6 +140,10 @@ def get_next_version(conn: sqlite3.Connection, dataset_id: int) -> int:
     result = cursor.fetchone()
     max_version = result[0] if result[0] is not None else 0
     return max_version + 1
+
+def delete_files(conn: sqlite3.Connection, dataset_id: int) -> None:
+    """Delete all files associated with a dataset from the files table of tracker.db"""
+    conn.execute("DELETE FROM files WHERE version_id IN (SELECT id FROM versions WHERE dataset_id = ?)", (dataset_id,))
 
 def delete_object(conn: sqlite3.Connection, dataset_id: int) -> list[str]:
     """Delete an object from the objects table of the tracker.db database
@@ -170,3 +169,9 @@ def delete_versions(conn: sqlite3.Connection, dataset_id: int) -> None:
 def delete_dataset(conn: sqlite3.Connection, dataset_id: int) -> None:
     """Delete a dataset from the datasets table of the tracker.db database"""
     conn.execute("DELETE FROM datasets WHERE id = ?", (dataset_id,))
+
+def object_is_used(conn: sqlite3.Connection, object_hash: str) -> bool:
+    """Check if an object hash is referenced by any version in the versions table"""
+    cursor = conn.cursor()
+    cursor.execute("SELECT 1 FROM versions WHERE object_hash = ?", (object_hash,))
+    return cursor.fetchone() is not None
