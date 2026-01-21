@@ -18,12 +18,12 @@ def init() -> None:
 @click.command()
 @click.argument("data_path")
 @click.option("--title", default=None, help="Title of the dataset")
-@click.option("-v", "--version", default=1, type=int, help="Version number of the data being added")
-@click.option("-n", "--notes", default=None, help="Additional notes about the data")
-def add(data_path: str, title: str, version: int, notes: str) -> None:
+@click.option("-v", "--version", default=1.0, type=float, help="Version number of the data being added")
+@click.option("-m", "--message", default=None, help="Additional message about the data")
+def add(data_path: str, title: str, version: float, message: str) -> None:
     """Add new data to the tracker"""
     try:
-        success, message = core.add_data(data_path, title, version, notes)
+        success, message = core.add_data(data_path, title, version, message)
         if success:
             click.echo(message)
         else:
@@ -36,9 +36,9 @@ def add(data_path: str, title: str, version: int, notes: str) -> None:
 @click.argument("data_path")
 @click.option("--id", type=int, default=None, help="ID of the dataset to update")
 @click.option("--name", default=None, help="Name of the dataset to update")
-@click.option("-v", "--version", type=int, default=None, help="Version number")
+@click.option("-v", "--version", type=float, default=None, help="Version number")
 @click.option("-m", "--message", default=None, help="Message describing the update")
-def update(data_path: str, id: int, name: str, version: int, message: str) -> None:
+def update(data_path: str, id: int, name: str, version: float, message: str) -> None:
     """Add a new version of existing dataset to the tracker"""
     if bool(id) == bool(name):
         raise click.UsageError("Provide exactly one of --id or --name")
@@ -102,10 +102,10 @@ def history(id: int, name: str) -> None:
         sys.exit(1)
 
 @click.command()
-@click.option("-v", "version", type=int) # make this differently
+@click.option("-v", "version", type=float) # change this
 @click.option("--id", type=int, default=None, help="ID of the dataset")
 @click.option("--name", default=None, help="Name of the dataset")
-def view(id: int, name: str, version: int) -> None:
+def view(id: int, name: str, version: float) -> None:
     """Open a specific version of a dataset"""
     if bool(id) == bool(name):
         raise click.UsageError("Provide exactly one of --id or --name")
@@ -122,7 +122,5 @@ def view(id: int, name: str, version: int) -> None:
         sys.exit(1)
 
 
-# Consider edge cases like adding directories, unsupported file types etc.
 # do not allow updating unchanged data, create get_db_path function?
 # add compare dataset versions
-# make objet hash nullable?, make versions floats

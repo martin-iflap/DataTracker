@@ -29,7 +29,7 @@ def initialize_tracker() -> Tuple[bool, str]:
     except OSError as e:
         return False, f"Failed to create essential directories: {e}"
 
-def add_data(data_path: str, title: str, version: int, notes: str) -> Tuple[bool, str]:
+def add_data(data_path: str, title: str, version: float, message: str) -> Tuple[bool, str]:
     """Add new data file or folder to be tracked
      - If file: adds single file with its hash
      - If folder: recursively adds all files preserving folder structure
@@ -58,7 +58,7 @@ def add_data(data_path: str, title: str, version: int, notes: str) -> Tuple[bool
                     files_to_add.append((filepath, rel_path))
 
         return _add_files_to_tracker(files_to_add, tracker_path, data_path,
-                                     title=title, version=version, notes=notes)
+                                     title=title, version=version, message=message)
     except FileNotFoundError:
         return False, f"Data path {data_path} does not exist"
     except OSError as e:
@@ -68,7 +68,7 @@ def add_data(data_path: str, title: str, version: int, notes: str) -> Tuple[bool
 
 def _add_files_to_tracker(files: list[Tuple[str, str]], tracker_path: str,
                           data_path: str, dataset_id: int = None, title: str = None,
-                          version: int = None, notes: str = None) -> Tuple[bool, str]:
+                          version: float = None, message: str = None) -> Tuple[bool, str]:
     """Add multiple files to the data tracker in a single transaction
      - Creates dataset entry and inserts all files atomically
      - Each file gets hashed, copied to objects, and recorded in files table
@@ -83,7 +83,7 @@ def _add_files_to_tracker(files: list[Tuple[str, str]], tracker_path: str,
             if dataset_id is None:
                 if title and db.dataset_exists(conn, None, title):
                     return False, f"Dataset with name '{title}' already exists."
-                dataset_id = db.insert_dataset(conn, title, notes)
+                dataset_id = db.insert_dataset(conn, title, message)
             else:
                 if version is None:
                     version = db.get_next_version(conn, dataset_id)
@@ -98,7 +98,7 @@ def _add_files_to_tracker(files: list[Tuple[str, str]], tracker_path: str,
             if duplicate_warning:
                 return_message = f"Duplicate Warning! Version with same data already exists: {duplicate_warning}\n"
 
-            version_id = db.insert_version(conn, dataset_id, primary_hash, version, data_path, notes)
+            version_id = db.insert_version(conn, dataset_id, primary_hash, version, data_path, message)
 
             for filepath, rel_path in files:
                 try:
@@ -227,7 +227,7 @@ def get_history(data_id: int, name: str) -> Tuple[bool, str]:
         output_lines = ["Dataset History:"]
         for record in entire_history:
             output_lines.append(
-                f"Version: {record['version']}, ID: {record['id']}, Object Hash: {record['object_hash']}, "
+                f"Version: {float(record['version'])}, ID: {record['id']}, Object Hash: {record['object_hash']}, "
                 f"Original Path: {record['original_path']}, Added At: {record['created_at']},   Message: {record['message']}"
             )
         return True, "\n".join(output_lines)
@@ -236,7 +236,7 @@ def get_history(data_id: int, name: str) -> Tuple[bool, str]:
     except OSError as e:
         return False, f"Filesystem error while retrieving history: {e}"
 
-def update_data(data_path: str, data_id: int, name: str, version: int, message: str) -> Tuple[bool, str]:
+def update_data(data_path: str, data_id: int, name: str, version: float, message: str) -> Tuple[bool, str]:
     """Add a new version of existing dataset to the tracker and tracker.db"""
     try:
         tracker_path = find_data_tracker_root()
@@ -265,7 +265,7 @@ def update_data(data_path: str, data_id: int, name: str, version: int, message: 
                 data_id = db.get_id_from_name(conn, name)
 
         return _add_files_to_tracker(files_to_add, tracker_path, data_path,
-                                     dataset_id=data_id, version=version, notes=message)
+                                     dataset_id=data_id, version=version, message=message)
     except sqlite3.Error as e:
         return False, f"Database error while updating data: {e}"
     except OSError as e:
@@ -294,7 +294,7 @@ def remove_data(data_id: int, name: str) -> Tuple[bool, str]:
 
             db.delete_files(conn, data_id)
             db.delete_versions(conn, data_id)
-            hashes_to_remove = db.delete_object(conn, data_id)
+            hashes_to_remove = db.delete_object(conn)
             db.delete_dataset(conn, data_id)
             conn.commit()
 
@@ -322,41 +322,67 @@ def _remove_file_object(tracker_path: str, file_hash: str) -> Tuple[bool, str]:
         return False, f"Failed to remove object file {object_path}: {e}"
     return True, ""
 
-def open_dataset_version(data_id: int, name: str, version_num: int) -> Tuple[bool, str]:
+def open_dataset_version(data_id: int, name: str, version_num: float) -> Tuple[bool, str]:
     """Open a dataset version by copying it to a temp file with proper extension
+     - At the start run cleanup_temp_files to remove old temp files from filesystem
+     - If single file, create a named temp file with the original extension and open it
+     - If multiple files, create a temp directory, reconstruct folder structure, and open it
+    Returns: Tuple[bool, str]: (success, message)
     """
     try:
+        removed, failed = cleanup_temp_files()
+        if failed > 0:
+            print(f"Warning: Failed to remove {failed} temporary file(s) from previous view commands.")
+
         tracker_path = find_data_tracker_root()
         if tracker_path is None:
             return False, "Data tracker is not initialized. Please run 'dt init' first."
 
-        all_versions = db.get_dataset_history(os.path.join(tracker_path, "tracker.db"), data_id, name)
-        if not all_versions:
-            return False, "No history found for the specified dataset."
+        all_files = db.get_files_for_version(os.path.join(tracker_path, "tracker.db"), data_id, name, version_num)
+        if not all_files:
+            return False, "No files found for the specified dataset version."
 
-        target_version = next((v for v in all_versions if v['version'] == version_num), None)
-        if target_version is None:
-            return False, f"Version {version_num} not found for the specified dataset."
-        hash_name = target_version['object_hash']
-        original_filepath = target_version['original_path']
+        objects_path = os.path.join(tracker_path, "objects")
 
-        objects_path = os.path.join(tracker_path, "objects", hash_name)
+        if len(all_files) == 1:
+            file_record = all_files[0]
+            file_hash = file_record['object_hash']
+            rel_path = file_record['relative_path']
+            source = os.path.join(objects_path, file_hash)
 
-        if not os.path.exists(objects_path):
-            raise FileNotFoundError(f"Dataset version not found: {hash_name}")
+            if not os.path.exists(source):
+                raise FileNotFoundError(f"Dataset version not found: {file_hash}")
 
-        ext = os.path.splitext(original_filepath)[-1]
-        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as temp_file:
-            temp_path = temp_file.name
-            shutil.copy2(objects_path, temp_path)
-        try:
-            open_file(temp_path)
-            return True, f"Opened dataset {data_id}, version {version_num} successfully."
-        except OSError as e:
-            os.unlink(temp_path)
-            raise
+            ext = os.path.splitext(rel_path)[-1]
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext, prefix="dt_view_") as temp_file:
+                temp_path = temp_file.name
+                shutil.copy2(source, temp_path)
+            try:
+                open_file(temp_path)
+            except OSError as e:
+                os.unlink(temp_path)
+                raise
+        else:
+            temp_dir = tempfile.mkdtemp(prefix="dt_view_")
+            try:
+                for file_record in all_files:
+                    file_hash = file_record['object_hash']
+                    rel_path = file_record['relative_path']
+                    source = os.path.join(objects_path, file_hash)
+                    dest = os.path.join(temp_dir, rel_path)
+
+                    os.makedirs(os.path.dirname(dest), exist_ok=True)
+                    shutil.copy2(source, dest)
+                open_file(temp_dir)
+            except OSError as e:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                raise
+
+        return True, f"Opened dataset {data_id}, version {version_num} successfully."
     except sqlite3.Error as e:
-        return False, f"Database error while opening dataset version: {e}"
+        return False, f"Database error while opening dataset {data_id} version {version_num}: {e}"
+    except OSError as e:
+        return False, f"Filesystem error while opening dataset {data_id} version {version_num}: {e}"
 
 def open_file(file_path: str) -> None:
     """Open a file using the default application based on the OS"""
@@ -371,3 +397,27 @@ def open_file(file_path: str) -> None:
             subprocess.run(["xdg-open", file_path], check=True)
     except Exception as e:
         raise OSError(f"Failed to open file: {e}")
+
+def cleanup_temp_files() -> Tuple[int, int]:
+    """Remove temporary files created by previous view commands"""
+    removed: int = 0
+    failed: int = 0
+    try:
+        temp_dir = tempfile.gettempdir()
+        dt_pattern = "dt_view_"
+
+        for item in os.listdir(temp_dir):
+            if item.startswith(dt_pattern):
+                item_path = os.path.join(temp_dir, item)
+                try:
+                    if os.path.isfile(item_path):
+                        os.unlink(item_path)
+                        removed += 1
+                    elif os.path.isdir(item_path):
+                        shutil.rmtree(item_path)
+                        removed += 1
+                except OSError:
+                    failed += 1
+    except OSError:
+        pass
+    return removed, failed

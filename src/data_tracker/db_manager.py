@@ -105,6 +105,21 @@ def get_dataset_history(db_path: str, dataset_id: int, name: str) -> list[sqlite
                        (dataset_id,))
         return cursor.fetchall()
 
+def get_files_for_version(db_path, dataset_id: int, name: str, version: float) -> list[sqlite3.Row]:
+    """Retrieve all files associated with a specific version ID from the tracker.db files table"""
+    with open_database(db_path) as conn:
+        cursor = conn.cursor()
+        if not dataset_id:
+            dataset_id = get_id_from_name(conn, name)
+
+        cursor.execute("""
+            SELECT relative_path, object_hash
+            FROM files WHERE version_id = (
+                SELECT id FROM versions
+                WHERE dataset_id = ? AND version = ?
+            )""", (dataset_id, version))
+        return cursor.fetchall()
+
 def get_id_from_name(conn: sqlite3.Connection, name: str) -> int:
     """Get the dataset ID from its name and return it"""
     cursor = conn.cursor()
@@ -133,19 +148,19 @@ def hash_exists(conn: sqlite3.Connection, file_hash: str) -> str | None:
         f"Added At: {row['created_at']},  Message: {row['message']}"
     ) if row else None
 
-def get_next_version(conn: sqlite3.Connection, dataset_id: int) -> int:
+def get_next_version(conn: sqlite3.Connection, dataset_id: int) -> float:
     """Get the next version number for a dataset with a given ID"""
     cursor = conn.cursor()
     cursor.execute("SELECT MAX(version) FROM versions WHERE dataset_id = ?", (dataset_id,))
     result = cursor.fetchone()
     max_version = result[0] if result[0] is not None else 0
-    return max_version + 1
+    return float(max_version + 1)
 
 def delete_files(conn: sqlite3.Connection, dataset_id: int) -> None:
     """Delete all files associated with a dataset from the files table of tracker.db"""
     conn.execute("DELETE FROM files WHERE version_id IN (SELECT id FROM versions WHERE dataset_id = ?)", (dataset_id,))
 
-def delete_object(conn: sqlite3.Connection, dataset_id: int) -> list[str]:
+def delete_object(conn: sqlite3.Connection) -> list[str]:
     """Delete an object from the objects table of the tracker.db database
      - Delete only if no other versions reference the same object_hash\
      - Return a list of deleted object hashes for further file system cleanup
@@ -154,7 +169,7 @@ def delete_object(conn: sqlite3.Connection, dataset_id: int) -> list[str]:
 
     rows = conn.execute("""
                         SELECT hash FROM objects
-                        WHERE hash NOT IN (SELECT DISTINCT object_hash FROM versions)
+                        WHERE hash NOT IN (SELECT DISTINCT object_hash FROM files)
                         """).fetchall()
     for row in rows:
         object_hash = row['hash']
