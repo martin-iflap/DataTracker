@@ -85,7 +85,7 @@ def ls() -> None:
         sys.exit(1)
 
 @click.command()
-@click.option("--id", type=int, default=None, help="ID of the dataset")
+@click.option("--id", type=int, default=None, help="ID of the dataset") # should I display the hash?
 @click.option("--name", default=None, help="Name of the dataset")
 def history(id: int, name: str) -> None:
     """Show history of changes for a specific data file"""
@@ -123,4 +123,16 @@ def view(id: int, name: str, version: float) -> None:
 
 
 # do not allow updating unchanged data, create get_db_path function?
+
 # add compare dataset versions
+# For single files:
+    # File hash comparison: Quick check if files are identical
+    # Size difference: How much the file grew/shrunk
+    # Line count difference (for text files): Added/removed/changed lines
+    # Content similarity percentage: Using difflib or similar
+    # File type change: If extension changed
+# For directories:
+    # Structure changes: Files added, removed, or renamed
+    # File-by-file comparison: Show which files changed and how
+    # Total size difference: Overall storage impact
+    # Summary statistics: Total files added/removed/modified

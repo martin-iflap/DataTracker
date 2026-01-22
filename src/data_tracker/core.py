@@ -196,6 +196,7 @@ def list_data() -> Tuple[bool, str]:
         tracker_path = find_data_tracker_root()
         if tracker_path is None:
             return False, "Data tracker is not initialized. Please run 'dt init' first."
+        db_path = os.path.join(tracker_path, "tracker.db")
 
         all_datasets = db.get_all_datasets(os.path.join(tracker_path, "tracker.db"))
         if not all_datasets:
@@ -204,8 +205,67 @@ def list_data() -> Tuple[bool, str]:
         all_datasets = sorted(all_datasets, key=lambda x: x['id'])
         output_lines = ["Tracked Datasets:"]
         for dataset in all_datasets:
-            output_lines.append(f"ID: {dataset['id']},  Name: {dataset['name']},  "
+            dataset_id = dataset['id']
+            output_lines.append(f"ID: {dataset_id},  Name: {dataset['name']},  "
                                 f"Created At: {dataset['created_at']},  Notes: {dataset['notes']}")
+
+            try:
+                all_versions = db.get_dataset_history(db_path, dataset_id, None)
+                if not all_versions:
+                    output_lines.append("  No versions found for this dataset.")
+                    continue
+                latest_version = all_versions[-1]['version']
+                original_path = all_versions[-1]['original_path']
+
+
+                all_files = db.get_files_for_version(db_path, dataset_id, None, latest_version)
+
+                if len(all_files) == 1 and all_files[0]['relative_path'] == os.path.basename(original_path):
+                    root_name = os.path.basename(original_path)
+                    output_lines.append(f"  Structure:\n    {root_name}")
+                else:
+                    root_name = os.path.basename(original_path.rstrip(os.sep))
+                    lines = [f"  Structure:", f"    {root_name}/"]
+
+                    sorted_files = sorted(all_files, key=lambda x: x['relative_path'])
+
+                    tree_dict = {}
+                    for file_record in sorted_files:
+                        rel_path = file_record['relative_path']
+                        parts = rel_path.split(os.sep)
+
+                        current_level = tree_dict
+                        for part in parts[:-1]:
+                            if part not in current_level:
+                                current_level[part] = {}
+                            current_level = current_level[part]
+
+                        file_name = parts[-1]
+                        current_level[file_name] = None
+
+                    def format_tree(tree, prefix="      "):
+                        """Format the tree structure recursively and return as a list of strings"""
+                        items = sorted(tree.items(), key=lambda x: (x[1] is not None, x[0]))
+                        result = []
+
+                        for idx, (name, subtree) in enumerate(items):
+                            is_last_item = (idx == len(items) - 1)
+                            connector = "└── " if is_last_item else "├── "
+
+                            if subtree is None:  # File
+                                result.append(f"{prefix}{connector}{name}")
+                            else:  # Directory
+                                result.append(f"{prefix}{connector}{name}/")
+                                extension = "    " if is_last_item else "│   "
+                                result.extend(format_tree(subtree, prefix + extension))
+                        return result
+
+                    lines.extend(format_tree(tree_dict))
+                    output_lines.append("\n".join(lines))
+            except (sqlite3.Error, OSError, KeyError, IndexError) as e:
+                output_lines.append(f"Failed to retrieve structure: {e}")
+
+            output_lines.append("")
 
         return True, "\n".join(output_lines)
     except sqlite3.Error as e:
@@ -227,8 +287,8 @@ def get_history(data_id: int, name: str) -> Tuple[bool, str]:
         output_lines = ["Dataset History:"]
         for record in entire_history:
             output_lines.append(
-                f"Version: {float(record['version'])}, ID: {record['id']}, Object Hash: {record['object_hash']}, "
-                f"Original Path: {record['original_path']}, Added At: {record['created_at']},   Message: {record['message']}"
+                f"Version: {float(record['version'])},  ID: {record['id']},  Message: {record['message']}, "
+                f"Added At: {record['created_at']},  Original Path: {record['original_path']},  Object Hash: {record['object_hash']}\n"
             )
         return True, "\n".join(output_lines)
     except sqlite3.Error as e:
