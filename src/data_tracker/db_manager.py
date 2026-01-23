@@ -156,6 +156,14 @@ def get_next_version(conn: sqlite3.Connection, dataset_id: int) -> float:
     max_version = result[0] if result[0] is not None else 0
     return float(max_version + 1)
 
+def get_object_size(db_path: str, object_hash: str) -> int:
+    """Retrieve object size from the objects table of tracker.db by its hash"""
+    with open_database(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT size FROM objects WHERE hash = ?", (object_hash,))
+        row = cursor.fetchone()
+        return row['size'] if row else 0
+
 def delete_files(conn: sqlite3.Connection, dataset_id: int) -> None:
     """Delete all files associated with a dataset from the files table of tracker.db"""
     conn.execute("DELETE FROM files WHERE version_id IN (SELECT id FROM versions WHERE dataset_id = ?)", (dataset_id,))

@@ -481,3 +481,53 @@ def cleanup_temp_files() -> Tuple[int, int]:
     except OSError:
         pass
     return removed, failed
+
+def compare_dataset_versions(data_id: int, name: str, version_1: float, version_2: float) -> Tuple[bool, str]:
+    """Compare two versions of a dataset"""
+    try:
+        tracker_path = find_data_tracker_root()
+        if tracker_path is None:
+            return False, "Data tracker is not initialized. Please run 'dt init' first."
+        db_path = os.path.join(tracker_path, "tracker.db")
+
+        files_v1 = db.get_files_for_version(db_path, data_id, name, version_1)
+        files_v2 = db.get_files_for_version(db_path, data_id, name, version_2)
+        if not files_v1:
+            return False, f"No files found for version {version_1}. Version may be invalid."
+        if not files_v2:
+            return False, f"No files found for version {version_2}. Version may be invalid."
+        set_v1: set = {(file['relative_path'], file['object_hash'],
+                        db.get_object_size(db_path, file['object_hash'])) for file in files_v1}
+
+        set_v2: set = {(file['relative_path'], file['object_hash'],
+                        db.get_object_size(db_path, file['object_hash'])) for file in files_v2}
+
+        if set_v1 == set_v2:
+            return True, f"No differences between version {version_1} and version {version_2}"
+
+        added_files = set_v2 - set_v1
+        removed_files = set_v1 - set_v2
+        total_size_added = sum(size for _, _, size in added_files)
+        total_size_removed = sum(size for _, _, size in removed_files)
+
+        output_lines = [f"Comparison between version {version_1} and version {version_2}:"]
+
+        if added_files:
+            output_lines.append("Added files:")
+            for rel_path, obj_hash, size in added_files:
+                output_lines.append(f"  -{rel_path} | Size: {size} | Hash: {obj_hash}")
+            output_lines.append(f"Total size added: {total_size_added} bytes")
+        elif removed_files:
+            output_lines.append("Removed files:")
+            for rel_path, obj_hash, size in removed_files:
+                output_lines.append(f"  -{rel_path} | Size: {size} | Hash: {obj_hash}")
+            output_lines.append(f"Total size removed: {total_size_removed} bytes")
+        else:
+            output_lines.append("No files added or removed")
+
+        return True, "\n".join(output_lines)
+    except sqlite3.Error as e:
+        return False, f"Database error while comparing dataset versions: {e}"
+    except OSError as e:
+        return False, f"Filesystem error while comparing dataset versions: {e}"
+

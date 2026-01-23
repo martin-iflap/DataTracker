@@ -121,18 +121,40 @@ def view(id: int, name: str, version: float) -> None:
         click.secho(f"Error: {e}", fg="red", err=True)
         sys.exit(1)
 
+@click.command()
+@click.argument("v1", type=float)
+@click.argument("v2", type=float)
+@click.option("--id", type=int, default=None, help="ID of the dataset")
+@click.option("--name", default=None, help="Name of the dataset")
+def compare(id: int, name: str, v1: float, v2: float) -> None:
+    """Compare two versions of a dataset and show differences"""
+    if bool(id) == bool(name):
+        raise click.UsageError("Provide exactly one of --id or --name")
+    try:
+        success, message = core.compare_dataset_versions(id, name, v1, v2)
+        if success:
+            click.echo(message)
+        else:
+            click.secho(message, fg="red")
+    except Exception as e:
+        click.secho(f"Error: {e}", fg="red", err=True)
+        sys.exit(1)
+
+
 
 # do not allow updating unchanged data, create get_db_path function?
 
 # add compare dataset versions
+# extract the structure display code and use it in ls and compare
+# add all the code shit below
 # For single files:
-    # File hash comparison: Quick check if files are identical
+    # File hash comparison: Quick check if files are identical -
     # Size difference: How much the file grew/shrunk
     # Line count difference (for text files): Added/removed/changed lines
     # Content similarity percentage: Using difflib or similar
     # File type change: If extension changed
 # For directories:
-    # Structure changes: Files added, removed, or renamed
+    # Structure changes: Files added, removed, or renamed -
     # File-by-file comparison: Show which files changed and how
     # Total size difference: Overall storage impact
     # Summary statistics: Total files added/removed/modified
