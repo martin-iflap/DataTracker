@@ -186,10 +186,11 @@ def find_data_tracker_root(start_path: str = None) -> str | None:
     except OSError:
         return None
 
-def list_data() -> Tuple[bool, str]:
+def list_data(struct: bool) -> Tuple[bool, str]:
     """List all tracked data files in the data tracker.db datasets table
      - use the db_manager.py get_all_datasets function to retrieve datasets
      - format the output for display and return as a string
+     - also display the folder structure for each dataset
     Returns: Tuple[bool, str]: (success, message)
     """
     try:
@@ -208,63 +209,9 @@ def list_data() -> Tuple[bool, str]:
             dataset_id = dataset['id']
             output_lines.append(f"ID: {dataset_id},  Name: {dataset['name']},  "
                                 f"Created At: {dataset['created_at']},  Notes: {dataset['notes']}")
-
-            try:
-                all_versions = db.get_dataset_history(db_path, dataset_id, None)
-                if not all_versions:
-                    output_lines.append("  No versions found for this dataset.")
-                    continue
-                latest_version = all_versions[-1]['version']
-                original_path = all_versions[-1]['original_path']
-
-
-                all_files = db.get_files_for_version(db_path, dataset_id, None, latest_version)
-
-                if len(all_files) == 1 and all_files[0]['relative_path'] == os.path.basename(original_path):
-                    root_name = os.path.basename(original_path)
-                    output_lines.append(f"  Structure:\n    {root_name}")
-                else:
-                    root_name = os.path.basename(original_path.rstrip(os.sep))
-                    lines = [f"  Structure:", f"    {root_name}/"]
-
-                    sorted_files = sorted(all_files, key=lambda x: x['relative_path'])
-
-                    tree_dict = {}
-                    for file_record in sorted_files:
-                        rel_path = file_record['relative_path']
-                        parts = rel_path.split(os.sep)
-
-                        current_level = tree_dict
-                        for part in parts[:-1]:
-                            if part not in current_level:
-                                current_level[part] = {}
-                            current_level = current_level[part]
-
-                        file_name = parts[-1]
-                        current_level[file_name] = None
-
-                    def format_tree(tree, prefix="      "):
-                        """Format the tree structure recursively and return as a list of strings"""
-                        items = sorted(tree.items(), key=lambda x: (x[1] is not None, x[0]))
-                        result = []
-
-                        for idx, (name, subtree) in enumerate(items):
-                            is_last_item = (idx == len(items) - 1)
-                            connector = "└── " if is_last_item else "├── "
-
-                            if subtree is None:  # File
-                                result.append(f"{prefix}{connector}{name}")
-                            else:  # Directory
-                                result.append(f"{prefix}{connector}{name}/")
-                                extension = "    " if is_last_item else "│   "
-                                result.extend(format_tree(subtree, prefix + extension))
-                        return result
-
-                    lines.extend(format_tree(tree_dict))
-                    output_lines.append("\n".join(lines))
-            except (sqlite3.Error, OSError, KeyError, IndexError) as e:
-                output_lines.append(f"Failed to retrieve structure: {e}")
-
+            if struct:
+                structure = display_structure(db_path, dataset_id)
+                output_lines.append(structure)
             output_lines.append("")
 
         return True, "\n".join(output_lines)
@@ -272,6 +219,66 @@ def list_data() -> Tuple[bool, str]:
         return False, f"Database error while listing data: {e}"
     except OSError as e:
         return False, f"Filesystem error while listing data: {e}"
+
+def display_structure(db_path: str, dataset_id: int, version: float = None) -> str:
+    """Format the dataset folder structure for display and return as a string
+     - Build a tree-like structure representing files and folders with helper function
+     - If version is None, use the latest version
+    """
+    try:
+        all_versions = db.get_dataset_history(db_path, dataset_id, None)
+        if not all_versions:
+            return "  No versions found for this dataset."
+
+        latest_version = all_versions[-1]['version']
+        original_path = all_versions[-1]['original_path']
+
+        all_files = db.get_files_for_version(db_path, dataset_id, None, version if version else latest_version)
+
+        if len(all_files) == 1 and all_files[0]['relative_path'] == os.path.basename(original_path):
+            root_name = os.path.basename(original_path)
+            return f"  Structure:\n    -{root_name}"
+        else:
+            root_name = os.path.basename(original_path.rstrip(os.sep))
+            lines = [f"  Structure:", f"    {root_name}/"]
+
+            sorted_files = sorted(all_files, key=lambda x: x['relative_path'])
+
+            tree_dict = {}
+            for file_record in sorted_files:
+                rel_path = file_record['relative_path']
+                parts = rel_path.split(os.sep)
+
+                current_level = tree_dict
+                for part in parts[:-1]:
+                    if part not in current_level:
+                        current_level[part] = {}
+                    current_level = current_level[part]
+
+                file_name = parts[-1]
+                current_level[file_name] = None
+
+            def format_tree(tree, prefix="      "):
+                """Format the tree structure recursively and return as a list of strings"""
+                items = sorted(tree.items(), key=lambda x: (x[1] is not None, x[0]))
+                result = []
+
+                for idx, (name, subtree) in enumerate(items):
+                    is_last_item = (idx == len(items) - 1)
+                    connector = "└── " if is_last_item else "├── "
+
+                    if subtree is None:  # File
+                        result.append(f"{prefix}{connector}{name}")
+                    else:  # Directory
+                        result.append(f"{prefix}{connector}{name}/")
+                        extension = "    " if is_last_item else "│   "
+                        result.extend(format_tree(subtree, prefix + extension))
+                return result
+
+            lines.extend(format_tree(tree_dict))
+            return "\n".join(lines)
+    except (sqlite3.Error, OSError, KeyError, IndexError) as e:
+        return f"Failed to retrieve structure: {e}"
 
 def get_history(data_id: int, name: str) -> Tuple[bool, str]:
     """Show history of versions with additional info for a specific data id or name"""
@@ -505,25 +512,48 @@ def compare_dataset_versions(data_id: int, name: str, version_1: float, version_
         if set_v1 == set_v2:
             return True, f"No differences between version {version_1} and version {version_2}"
 
+        output_lines = [f"Comparison between version {version_1} and version {version_2}:", f"Version: {version_1}"]
+
+        structure_1 = display_structure(db_path, data_id, version_1)
+        output_lines.append(structure_1)
+        structure_2 = display_structure(db_path, data_id, version_2)
+        output_lines.append(f"\nVersion: {version_2}")
+        output_lines.append(structure_2)
+
         added_files = set_v2 - set_v1
         removed_files = set_v1 - set_v2
         total_size_added = sum(size for _, _, size in added_files)
-        total_size_removed = sum(size for _, _, size in removed_files)
+        total_size_removed = sum(size for _, _, size in removed_files) # perhaps add a summary at the top about file changes
 
-        output_lines = [f"Comparison between version {version_1} and version {version_2}:"]
+        modified_files: set = set()
+        for path_v1, hash_v1, size_v1 in set_v1:
+            for path_v2, hash_v2, size_v2 in set_v2:
+                if path_v1 == path_v2 and hash_v1 != hash_v2:
+                    modified_files.add((path_v1, size_v1, size_v2)) # add colorama for colored output?
+                    break
+
+        if modified_files:
+            output_lines.append("\nModified files:")
+            total_size_diff = 0
+            for rel_path, old_size, new_size in sorted(modified_files):
+                size_change = new_size - old_size
+                sign = "+" if size_change > 0 else ""
+                total_size_diff += size_change
+                output_lines.append(f"  ~ {rel_path} | Size: {format_size(old_size)} → {format_size(new_size)} = ({sign}{format_size(size_change)})")
+            output_lines.append(f"Total size change: {format_size(total_size_diff)}")
 
         if added_files:
-            output_lines.append("Added files:")
+            output_lines.append("\nAdded files:")
             for rel_path, obj_hash, size in added_files:
-                output_lines.append(f"  -{rel_path} | Size: {size} | Hash: {obj_hash}")
-            output_lines.append(f"Total size added: {total_size_added} bytes")
-        elif removed_files:
+                output_lines.append(f"  + {rel_path} | Size: {format_size(size)} | Hash: {obj_hash}")
+            output_lines.append(f"Total size added: {format_size(total_size_added)}")
+        if removed_files:
             output_lines.append("Removed files:")
             for rel_path, obj_hash, size in removed_files:
-                output_lines.append(f"  -{rel_path} | Size: {size} | Hash: {obj_hash}")
-            output_lines.append(f"Total size removed: {total_size_removed} bytes")
+                output_lines.append(f"  - {rel_path} | Size: {format_size(size)} | Hash: {obj_hash}")
+            output_lines.append(f"Total size removed: {format_size(total_size_removed)}")
         else:
-            output_lines.append("No files added or removed")
+            output_lines.append("No files added, removed or edited")
 
         return True, "\n".join(output_lines)
     except sqlite3.Error as e:
@@ -531,3 +561,10 @@ def compare_dataset_versions(data_id: int, name: str, version_1: float, version_
     except OSError as e:
         return False, f"Filesystem error while comparing dataset versions: {e}"
 
+def format_size(size_in_bytes: int) -> str:
+    """Format size in bytes to a human-readable string"""
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if size_in_bytes < 1024.0:
+            return f"{size_in_bytes:.2f} {unit}"
+        size_in_bytes /= 1024.0
+    return f"{size_in_bytes:.2f} PB"

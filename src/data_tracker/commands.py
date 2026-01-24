@@ -72,10 +72,11 @@ def remove(id: int, name: str) -> None:
         sys.exit(1)
 
 @click.command()
-def ls() -> None:
+@click.option("-s", "--structure", is_flag=True, help="Display the structure of tracked data files")
+def ls(structure: bool) -> None:
     """List all tracked data files"""
     try:
-        success, message = core.list_data()
+        success, message = core.list_data(structure)
         if success:
             click.echo(message)
         else:
@@ -144,17 +145,8 @@ def compare(id: int, name: str, v1: float, v2: float) -> None:
 
 # do not allow updating unchanged data, create get_db_path function?
 
-# add compare dataset versions
-# extract the structure display code and use it in ls and compare
-# add all the code shit below
 # For single files:
-    # File hash comparison: Quick check if files are identical -
-    # Size difference: How much the file grew/shrunk
     # Line count difference (for text files): Added/removed/changed lines
     # Content similarity percentage: Using difflib or similar
-    # File type change: If extension changed
 # For directories:
-    # Structure changes: Files added, removed, or renamed -
     # File-by-file comparison: Show which files changed and how
-    # Total size difference: Overall storage impact
-    # Summary statistics: Total files added/removed/modified
