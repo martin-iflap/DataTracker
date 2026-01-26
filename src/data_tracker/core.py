@@ -1,4 +1,5 @@
 import data_tracker.db_manager as db
+from colorama import Fore, init # initialized in compare function only
 from typing import Tuple
 import subprocess
 import tempfile
@@ -280,8 +281,13 @@ def display_structure(db_path: str, dataset_id: int, version: float = None) -> s
     except (sqlite3.Error, OSError, KeyError, IndexError) as e:
         return f"Failed to retrieve structure: {e}"
 
-def get_history(data_id: int, name: str) -> Tuple[bool, str]:
-    """Show history of versions with additional info for a specific data id or name"""
+def get_history(data_id: int, name: str, detailed_flag: bool) -> Tuple[bool, str]:
+    """Show history of versions with additional info for a specific data id or name
+     - format the output for display based on detailed_flag and return as str
+     - if detailed_flag is True, show Version, ID, Message, Added At, Original Path, Object Hash
+     - else show Version, Message, Added At
+    Returns: Tuple[bool, str]: (success, message)
+    """
     try:
         tracker_path = find_data_tracker_root()
         if tracker_path is None:
@@ -293,10 +299,15 @@ def get_history(data_id: int, name: str) -> Tuple[bool, str]:
 
         output_lines = ["Dataset History:"]
         for record in entire_history:
-            output_lines.append(
-                f"Version: {float(record['version'])},  ID: {record['id']},  Message: {record['message']}, "
-                f"Added At: {record['created_at']},  Original Path: {record['original_path']},  Object Hash: {record['object_hash']}\n"
-            )
+            if detailed_flag:
+                output_lines.append(
+                    f"Version: {float(record['version'])},  ID: {record['id']},  Message: {record['message']}, "
+                    f"Added At: {record['created_at']},  Original Path: {record['original_path']},  Object Hash: {record['object_hash']}\n"
+                )
+            else:
+                output_lines.append(
+                    f"Version: {float(record['version'])},  Message: {record['message']},  Added At: {record['created_at']}"
+                )
         return True, "\n".join(output_lines)
     except sqlite3.Error as e:
         return False, f"Database error while retrieving history: {e}"
@@ -490,8 +501,14 @@ def cleanup_temp_files() -> Tuple[int, int]:
     return removed, failed
 
 def compare_dataset_versions(data_id: int, name: str, version_1: float, version_2: float) -> Tuple[bool, str]:
-    """Compare two versions of a dataset"""
+    """Compare two versions of a dataset and show differences
+     - List added, removed, and modified files between versions
+     - Show size differences of the files and total size changes
+     - Format output with color coding for clarity
+    Returns: Tuple[bool, str]: (success, message)
+    """
     try:
+        init() # initialize colorama
         tracker_path = find_data_tracker_root()
         if tracker_path is None:
             return False, "Data tracker is not initialized. Please run 'dt init' first."
@@ -523,13 +540,13 @@ def compare_dataset_versions(data_id: int, name: str, version_1: float, version_
         added_files = set_v2 - set_v1
         removed_files = set_v1 - set_v2
         total_size_added = sum(size for _, _, size in added_files)
-        total_size_removed = sum(size for _, _, size in removed_files) # perhaps add a summary at the top about file changes
+        total_size_removed = sum(size for _, _, size in removed_files)
 
         modified_files: set = set()
         for path_v1, hash_v1, size_v1 in set_v1:
             for path_v2, hash_v2, size_v2 in set_v2:
                 if path_v1 == path_v2 and hash_v1 != hash_v2:
-                    modified_files.add((path_v1, size_v1, size_v2)) # add colorama for colored output?
+                    modified_files.add((path_v1, size_v1, size_v2))
                     break
 
         if modified_files:
@@ -539,21 +556,26 @@ def compare_dataset_versions(data_id: int, name: str, version_1: float, version_
                 size_change = new_size - old_size
                 sign = "+" if size_change > 0 else ""
                 total_size_diff += size_change
-                output_lines.append(f"  ~ {rel_path} | Size: {format_size(old_size)} → {format_size(new_size)} = ({sign}{format_size(size_change)})")
+                output_lines.append(f"  {Fore.YELLOW}~ {rel_path} | Size: {format_size(old_size)} →"
+                                    f"{format_size(new_size)} = {sign}{format_size(size_change)}{Fore.RESET}")
             output_lines.append(f"Total size change: {format_size(total_size_diff)}")
 
         if added_files:
             output_lines.append("\nAdded files:")
             for rel_path, obj_hash, size in added_files:
-                output_lines.append(f"  + {rel_path} | Size: {format_size(size)} | Hash: {obj_hash}")
+                output_lines.append(f"  {Fore.GREEN}+ {rel_path} | Size: {format_size(size)}{Fore.RESET}")
             output_lines.append(f"Total size added: {format_size(total_size_added)}")
         if removed_files:
             output_lines.append("Removed files:")
             for rel_path, obj_hash, size in removed_files:
-                output_lines.append(f"  - {rel_path} | Size: {format_size(size)} | Hash: {obj_hash}")
+                output_lines.append(f"  {Fore.RED}- {rel_path} | Size: {format_size(size)}{Fore.RESET}")
             output_lines.append(f"Total size removed: {format_size(total_size_removed)}")
-        else:
-            output_lines.append("No files added, removed or edited")
+        if not added_files:
+            output_lines.append("No files added.")
+        if not removed_files:
+            output_lines.append("No files removed.")
+        if not modified_files:
+            output_lines.append("No files modified.")
 
         return True, "\n".join(output_lines)
     except sqlite3.Error as e:

@@ -29,7 +29,11 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
+    { name = "colorama" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "click", specifier = ">=8.3.1" }]
+requires-dist = [
+    { name = "click", specifier = ">=8.3.1" },
+    { name = "colorama", specifier = ">=0.4.6" },
+]

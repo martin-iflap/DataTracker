@@ -86,14 +86,15 @@ def ls(structure: bool) -> None:
         sys.exit(1)
 
 @click.command()
-@click.option("--id", type=int, default=None, help="ID of the dataset") # should I display the hash?
+@click.option("--id", type=int, default=None, help="ID of the dataset")
 @click.option("--name", default=None, help="Name of the dataset")
-def history(id: int, name: str) -> None:
+@click.option("-d", "--detailed", is_flag=True, help="Show detailed history with file changes")
+def history(id: int, name: str, detailed: bool) -> None:
     """Show history of changes for a specific data file"""
     if bool(id) == bool(name):
         raise click.UsageError("Provide exactly one of --id or --name")
     try:
-        success, message = core.get_history(id, name)
+        success, message = core.get_history(id, name, detailed)
         if success:
             click.echo(message)
         else:
@@ -103,15 +104,13 @@ def history(id: int, name: str) -> None:
         sys.exit(1)
 
 @click.command()
-@click.option("-v", "version", type=float) # change this
+@click.option("-v", "version", type=float, required=True, help="Version number of the dataset to view")
 @click.option("--id", type=int, default=None, help="ID of the dataset")
 @click.option("--name", default=None, help="Name of the dataset")
 def view(id: int, name: str, version: float) -> None:
     """Open a specific version of a dataset"""
     if bool(id) == bool(name):
         raise click.UsageError("Provide exactly one of --id or --name")
-    if not version:
-        raise click.UsageError("Version number must be provided with -v/--version")
     try:
         success, message = core.open_dataset_version(id, name, version)
         if success:
@@ -125,7 +124,7 @@ def view(id: int, name: str, version: float) -> None:
 @click.command()
 @click.argument("v1", type=float)
 @click.argument("v2", type=float)
-@click.option("--id", type=int, default=None, help="ID of the dataset")
+@click.option("--id", type=int, default=None, help="ID of the dataset") # add file similarity and line count differences
 @click.option("--name", default=None, help="Name of the dataset")
 def compare(id: int, name: str, v1: float, v2: float) -> None:
     """Compare two versions of a dataset and show differences"""
@@ -141,12 +140,17 @@ def compare(id: int, name: str, v1: float, v2: float) -> None:
         click.secho(f"Error: {e}", fg="red", err=True)
         sys.exit(1)
 
+@click.command()
+@click.option("--image", required=True, help="Path to the image")
+@click.option("--input", required=True, help="Path to the input data") # is the shadowing a problem?
+@click.option("--output", required=True, help="Path to the output data")
+@click.option("--command", required=True, help="Transformation command to apply")
+def transform(image: str, input: str, output: str, command: str) -> None:
+    """Apply a transformation to the data using a containerized environment"""
+    pass
+
 
 
 # do not allow updating unchanged data, create get_db_path function?
-
-# For single files:
-    # Line count difference (for text files): Added/removed/changed lines
-    # Content similarity percentage: Using difflib or similar
-# For directories:
-    # File-by-file comparison: Show which files changed and how
+# add export command for exporting and restoring datasets
+# add some tests
