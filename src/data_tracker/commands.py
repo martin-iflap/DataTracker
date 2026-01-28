@@ -124,7 +124,7 @@ def view(id: int, name: str, version: float) -> None:
 @click.command()
 @click.argument("v1", type=float)
 @click.argument("v2", type=float)
-@click.option("--id", type=int, default=None, help="ID of the dataset") # add file similarity and line count differences
+@click.option("--id", type=int, default=None, help="ID of the dataset")
 @click.option("--name", default=None, help="Name of the dataset")
 def compare(id: int, name: str, v1: float, v2: float) -> None:
     """Compare two versions of a dataset and show differences"""

@@ -3,6 +3,7 @@ from colorama import Fore, init # initialized in compare function only
 from typing import Tuple
 import subprocess
 import tempfile
+import difflib
 import sqlite3
 import hashlib
 import shutil
@@ -537,39 +538,46 @@ def compare_dataset_versions(data_id: int, name: str, version_1: float, version_
         output_lines.append(f"\nVersion: {version_2}")
         output_lines.append(structure_2)
 
-        added_files = set_v2 - set_v1
-        removed_files = set_v1 - set_v2
-        total_size_added = sum(size for _, _, size in added_files)
-        total_size_removed = sum(size for _, _, size in removed_files)
-
         modified_files: set = set()
         for path_v1, hash_v1, size_v1 in set_v1:
             for path_v2, hash_v2, size_v2 in set_v2:
                 if path_v1 == path_v2 and hash_v1 != hash_v2:
-                    modified_files.add((path_v1, size_v1, size_v2))
+                    modified_files.add((path_v1, hash_v1, hash_v2, size_v1, size_v2))
                     break
+
+        modified_paths = {path for path, _, _, _, _ in modified_files}
+        added_files = {(path, f_hash, size) for path, f_hash, size in (set_v2 - set_v1) if path not in modified_paths}
+        removed_files = {(path, f_hash, size) for path, f_hash, size in (set_v1 - set_v2) if path not in modified_paths}
+        total_size_added = sum(size for _, _, size in added_files)
+        total_size_removed = sum(size for _, _, size in removed_files)
 
         if modified_files:
             output_lines.append("\nModified files:")
             total_size_diff = 0
-            for rel_path, old_size, new_size in sorted(modified_files):
+            for rel_path, hash_v1, hash_v2, old_size, new_size in sorted(modified_files):
                 size_change = new_size - old_size
                 sign = "+" if size_change > 0 else ""
                 total_size_diff += size_change
-                output_lines.append(f"  {Fore.YELLOW}~ {rel_path} | Size: {format_size(old_size)} →"
+                output_lines.append(f"  {Fore.YELLOW}~ {rel_path} | Size: {format_size(old_size)} → "
                                     f"{format_size(new_size)} = {sign}{format_size(size_change)}{Fore.RESET}")
-            output_lines.append(f"Total size change: {format_size(total_size_diff)}")
+
+                similarity, added, removed = compare_files(tracker_path, hash_v1, hash_v2)
+                output_lines.append(f"    Similarity: {similarity:.2f}%")
+                if added is not None and removed is not None:
+                    output_lines.append(f"    Lines added: {Fore.GREEN}{added}{Fore.RESET}, Lines removed: {Fore.RED}{removed}{Fore.RESET}")
+
+            output_lines.append(f"Total size change: {Fore.YELLOW}{format_size(total_size_diff)}{Fore.RESET}")
 
         if added_files:
             output_lines.append("\nAdded files:")
             for rel_path, obj_hash, size in added_files:
                 output_lines.append(f"  {Fore.GREEN}+ {rel_path} | Size: {format_size(size)}{Fore.RESET}")
-            output_lines.append(f"Total size added: {format_size(total_size_added)}")
+            output_lines.append(f"Total size added: {Fore.GREEN}{format_size(total_size_added)}{Fore.RESET}")
         if removed_files:
-            output_lines.append("Removed files:")
+            output_lines.append("\nRemoved files:")
             for rel_path, obj_hash, size in removed_files:
                 output_lines.append(f"  {Fore.RED}- {rel_path} | Size: {format_size(size)}{Fore.RESET}")
-            output_lines.append(f"Total size removed: {format_size(total_size_removed)}")
+            output_lines.append(f"Total size removed: {Fore.RED}{format_size(total_size_removed)}{Fore.RESET}")
         if not added_files:
             output_lines.append("No files added.")
         if not removed_files:
@@ -590,3 +598,44 @@ def format_size(size_in_bytes: int) -> str:
             return f"{size_in_bytes:.2f} {unit}"
         size_in_bytes /= 1024.0
     return f"{size_in_bytes:.2f} PB"
+
+def compare_files(tracker_path: str, hash_v1: str, hash_v2: str) -> Tuple[float, int, int]:
+    """Compare two files and return similarity percentage and line changes
+     - Handles text files line-by-line and binary files byte-by-byte by using helper function
+    Returns:
+        Tuple[float, int, int, int]: (similarity_percentage, lines_added, lines_removed)
+    """
+    objects_path = os.path.join(tracker_path, "objects")
+    file1 = os.path.join(objects_path, hash_v1)
+    file2 = os.path.join(objects_path, hash_v2)
+    if not os.path.exists(file1) or not os.path.exists(file2):
+        raise FileNotFoundError("One or both files do not exist")
+
+    try:
+        with open(file1, 'r', encoding='utf-8', errors='ignore') as f1:
+            lines1 = f1.readlines()
+        with open(file2, 'r', encoding='utf-8', errors='ignore') as f2:
+            lines2 = f2.readlines()
+    except UnicodeDecodeError:
+        # Binary file comparison
+        return _compare_binary_files(file1, file2)
+
+    matcher = difflib.SequenceMatcher(None, lines1, lines2)
+    similarity = matcher.ratio() * 100
+
+    diff = list(difflib.unified_diff(lines1, lines2, lineterm=''))
+    added = sum(1 for line in diff if line.startswith('+') and not line.startswith('+++'))
+    removed = sum(1 for line in diff if line.startswith('-') and not line.startswith('---'))
+    return similarity, added, removed
+
+def _compare_binary_files(file1: str, file2: str) -> Tuple[float, None, None]:
+    """Compare binary files byte-by-byte
+     - called by the compare_files function when text read fails
+    Returns: Tuple[float, int, int, int]: (similarity_percentage, None, None)
+    """
+    with open(file1, 'rb') as f1, open(file2, 'rb') as f2:
+        bytes1 = f1.read()
+        bytes2 = f2.read()
+    matcher = difflib.SequenceMatcher(None, bytes1, bytes2)
+    similarity = matcher.ratio() * 100
+    return similarity, None, None
