@@ -148,13 +148,13 @@ def hash_exists(conn: sqlite3.Connection, file_hash: str) -> str | None:
         f"Added At: {row['created_at']},  Message: {row['message']}"
     ) if row else None
 
-def get_next_version(conn: sqlite3.Connection, dataset_id: int) -> float:
+def get_latest_version(conn: sqlite3.Connection, dataset_id: int) -> float:
     """Get the next version number for a dataset with a given ID"""
     cursor = conn.cursor()
     cursor.execute("SELECT MAX(version) FROM versions WHERE dataset_id = ?", (dataset_id,))
     result = cursor.fetchone()
     max_version = result[0] if result[0] is not None else 0
-    return float(max_version + 1)
+    return float(max_version)
 
 def get_object_size(db_path: str, object_hash: str) -> int:
     """Retrieve object size from the objects table of tracker.db by its hash"""

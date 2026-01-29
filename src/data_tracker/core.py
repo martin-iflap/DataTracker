@@ -1,13 +1,7 @@
 import data_tracker.db_manager as db
-from colorama import Fore, init # initialized in compare function only
+import data_tracker.file_utils as fu
 from typing import Tuple
-import subprocess
-import tempfile
-import difflib
 import sqlite3
-import hashlib
-import shutil
-import sys
 import os
 
 
@@ -15,7 +9,7 @@ def initialize_tracker() -> Tuple[bool, str]:
     """Initialize the .data_tracker directory and config.json file
     Returns: Tuple[bool, str]: (success, message)
     """
-    existing_tracker = find_data_tracker_root()
+    existing_tracker = fu.find_data_tracker_root()
     if existing_tracker:
         return False, f"Data tracker already initialized at {existing_tracker}"
 
@@ -41,7 +35,7 @@ def add_data(data_path: str, title: str, version: float, message: str) -> Tuple[
     Returns: Tuple[bool, str]: (success, message)
     """
     try:
-        tracker_path = find_data_tracker_root()
+        tracker_path = fu.find_data_tracker_root()
         if tracker_path is None:
             return False, "Data tracker is not initialized. Please run 'dt init' first."
 
@@ -78,8 +72,9 @@ def _add_files_to_tracker(files: list[Tuple[str, str]], tracker_path: str,
      - Warns about hash collisions but doesn't prevent insertion
     Returns: Tuple[bool, str]: (success, concatenated messages for all files)"""
     try:
-        return_message = ""
-        db_path = os.path.join(tracker_path, "tracker.db")
+        return_message: str = ""
+        db_path: str = os.path.join(tracker_path, "tracker.db")
+        action: str = "added" if dataset_id is None else "updated"
 
         with db.open_database(db_path) as conn:
             if dataset_id is None:
@@ -88,13 +83,13 @@ def _add_files_to_tracker(files: list[Tuple[str, str]], tracker_path: str,
                 dataset_id = db.insert_dataset(conn, title, message)
             else:
                 if version is None:
-                    version = db.get_next_version(conn, dataset_id)
+                    version = db.get_latest_version(conn, dataset_id) + 1
 
-            primary_hash = ""
+            primary_hash: str = ""
             if len(files) == 1:
-                primary_hash = hash_file(files[0][0])
+                primary_hash = fu.hash_file(files[0][0])
             else:
-                primary_hash = hash_directory(data_path)
+                primary_hash = fu.hash_directory(data_path)
 
             duplicate_warning = db.hash_exists(conn, primary_hash)
             if duplicate_warning:
@@ -104,16 +99,15 @@ def _add_files_to_tracker(files: list[Tuple[str, str]], tracker_path: str,
 
             for filepath, rel_path in files:
                 try:
-                    file_hash = hash_file(filepath)
-                    _copy_file_to_objects(tracker_path, filepath, file_hash)
+                    file_hash = fu.hash_file(filepath)
+                    fu.copy_file_to_objects(tracker_path, filepath, file_hash)
 
                     file_size = os.path.getsize(filepath)
                     db.insert_object(conn, file_hash, file_size)
                     db.insert_files(conn, version_id, file_hash, rel_path)
 
-                    return_message += f"Data at {filepath} added successfully" # change to updated for update
+                    return_message += f"Data at {filepath} {action} successfully"
                 except sqlite3.Error as exc:
-                    file_hash = hash_file(filepath) # is this needed?
                     if not db.object_is_used(conn, file_hash):
                         removed, err = _remove_file_object(tracker_path, file_hash)
                         if not removed:
@@ -128,66 +122,6 @@ def _add_files_to_tracker(files: list[Tuple[str, str]], tracker_path: str,
         return False, f"Error while adding data: {e}"
     return True, return_message.strip()
 
-def _copy_file_to_objects(tracker_path: str, data_path: str, file_hash: str) -> None:
-    """Copy a file to the objects directory"""
-    save_path = os.path.join(tracker_path, "objects", file_hash)
-    if os.path.isfile(data_path):
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        shutil.copy2(data_path, save_path)
-    else:
-        raise OSError("Directory handling not implemented yet") # remove this check?
-
-def hash_file(file_path: str) -> str | None:
-    """Compute the hash of a file for versioning using SHA256"""
-    if not os.path.isfile(file_path):
-        raise ValueError(f"{file_path} is not a valid file")
-    sha256_hash = hashlib.sha256()
-    with open(file_path, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            sha256_hash.update(chunk)
-    return sha256_hash.hexdigest()
-
-def hash_directory(dir_path: str) -> str:
-    """Compute hash of entire directory based on file contents and structure
-     - Walk directory recursively but sort files and dirs for consistency
-    """
-    if not os.path.isdir(dir_path):
-        raise ValueError(f"{dir_path} is not a valid directory")
-    sha256_hash = hashlib.sha256()
-    for root, dirs, files in os.walk(dir_path):
-        dirs.sort()
-        files.sort()
-
-        for filename in files:
-            filepath = os.path.join(root, filename)
-            rel_path = os.path.relpath(filepath, dir_path)
-            sha256_hash.update(rel_path.encode('utf-8'))
-            with open(filepath, 'rb') as f:
-                for chunk in iter(lambda: f.read(8192), b""):
-                    sha256_hash.update(chunk)
-    return sha256_hash.hexdigest()
-
-def find_data_tracker_root(start_path: str = None) -> str | None:
-    """Find the .data_tracker directory by searching upwards from the start_path
-     - return the path if found or None if filesystem root is reached
-    """
-    if start_path is None:
-        start_path = os.getcwd()
-
-    try:
-        current_path = os.path.abspath(start_path)
-
-        while True:
-            tracker_path = os.path.join(current_path, ".data_tracker")
-            if os.path.exists(tracker_path):
-                return tracker_path
-            parent = os.path.dirname(current_path)
-            if parent == current_path:
-                return None
-            current_path = parent
-    except OSError:
-        return None
-
 def list_data(struct: bool) -> Tuple[bool, str]:
     """List all tracked data files in the data tracker.db datasets table
      - use the db_manager.py get_all_datasets function to retrieve datasets
@@ -196,12 +130,12 @@ def list_data(struct: bool) -> Tuple[bool, str]:
     Returns: Tuple[bool, str]: (success, message)
     """
     try:
-        tracker_path = find_data_tracker_root()
+        tracker_path = fu.find_data_tracker_root()
         if tracker_path is None:
             return False, "Data tracker is not initialized. Please run 'dt init' first."
         db_path = os.path.join(tracker_path, "tracker.db")
 
-        all_datasets = db.get_all_datasets(os.path.join(tracker_path, "tracker.db"))
+        all_datasets = db.get_all_datasets(db_path)
         if not all_datasets:
             return True, "No datasets tracked yet."
 
@@ -212,7 +146,7 @@ def list_data(struct: bool) -> Tuple[bool, str]:
             output_lines.append(f"ID: {dataset_id},  Name: {dataset['name']},  "
                                 f"Created At: {dataset['created_at']},  Notes: {dataset['notes']}")
             if struct:
-                structure = display_structure(db_path, dataset_id)
+                structure = fu.display_structure(db_path, dataset_id)
                 output_lines.append(structure)
             output_lines.append("")
 
@@ -222,66 +156,6 @@ def list_data(struct: bool) -> Tuple[bool, str]:
     except OSError as e:
         return False, f"Filesystem error while listing data: {e}"
 
-def display_structure(db_path: str, dataset_id: int, version: float = None) -> str:
-    """Format the dataset folder structure for display and return as a string
-     - Build a tree-like structure representing files and folders with helper function
-     - If version is None, use the latest version
-    """
-    try:
-        all_versions = db.get_dataset_history(db_path, dataset_id, None)
-        if not all_versions:
-            return "  No versions found for this dataset."
-
-        latest_version = all_versions[-1]['version']
-        original_path = all_versions[-1]['original_path']
-
-        all_files = db.get_files_for_version(db_path, dataset_id, None, version if version else latest_version)
-
-        if len(all_files) == 1 and all_files[0]['relative_path'] == os.path.basename(original_path):
-            root_name = os.path.basename(original_path)
-            return f"  Structure:\n    -{root_name}"
-        else:
-            root_name = os.path.basename(original_path.rstrip(os.sep))
-            lines = [f"  Structure:", f"    {root_name}/"]
-
-            sorted_files = sorted(all_files, key=lambda x: x['relative_path'])
-
-            tree_dict = {}
-            for file_record in sorted_files:
-                rel_path = file_record['relative_path']
-                parts = rel_path.split(os.sep)
-
-                current_level = tree_dict
-                for part in parts[:-1]:
-                    if part not in current_level:
-                        current_level[part] = {}
-                    current_level = current_level[part]
-
-                file_name = parts[-1]
-                current_level[file_name] = None
-
-            def format_tree(tree, prefix="      "):
-                """Format the tree structure recursively and return as a list of strings"""
-                items = sorted(tree.items(), key=lambda x: (x[1] is not None, x[0]))
-                result = []
-
-                for idx, (name, subtree) in enumerate(items):
-                    is_last_item = (idx == len(items) - 1)
-                    connector = "└── " if is_last_item else "├── "
-
-                    if subtree is None:  # File
-                        result.append(f"{prefix}{connector}{name}")
-                    else:  # Directory
-                        result.append(f"{prefix}{connector}{name}/")
-                        extension = "    " if is_last_item else "│   "
-                        result.extend(format_tree(subtree, prefix + extension))
-                return result
-
-            lines.extend(format_tree(tree_dict))
-            return "\n".join(lines)
-    except (sqlite3.Error, OSError, KeyError, IndexError) as e:
-        return f"Failed to retrieve structure: {e}"
-
 def get_history(data_id: int, name: str, detailed_flag: bool) -> Tuple[bool, str]:
     """Show history of versions with additional info for a specific data id or name
      - format the output for display based on detailed_flag and return as str
@@ -290,7 +164,7 @@ def get_history(data_id: int, name: str, detailed_flag: bool) -> Tuple[bool, str
     Returns: Tuple[bool, str]: (success, message)
     """
     try:
-        tracker_path = find_data_tracker_root()
+        tracker_path = fu.find_data_tracker_root()
         if tracker_path is None:
             return False, "Data tracker is not initialized. Please run 'dt init' first."
 
@@ -318,7 +192,7 @@ def get_history(data_id: int, name: str, detailed_flag: bool) -> Tuple[bool, str
 def update_data(data_path: str, data_id: int, name: str, version: float, message: str) -> Tuple[bool, str]:
     """Add a new version of existing dataset to the tracker and tracker.db"""
     try:
-        tracker_path = find_data_tracker_root()
+        tracker_path = fu.find_data_tracker_root()
         if tracker_path is None:
             return False, "Data tracker is not initialized. Please run 'dt init' first."
 
@@ -359,7 +233,7 @@ def remove_data(data_id: int, name: str) -> Tuple[bool, str]:
     """
     hashes_to_remove = []
     try:
-        tracker_path = find_data_tracker_root()
+        tracker_path = fu.find_data_tracker_root()
         if tracker_path is None:
             return False, "Data tracker is not initialized. Please run 'dt init' first."
 
@@ -392,7 +266,7 @@ def _remove_file_object(tracker_path: str, file_hash: str) -> Tuple[bool, str]:
     """Delete the file object from the objects directory by its hash (name)
      - return True if successful, False otherwise
     """
-    object_path = os.path.join(tracker_path, "objects", file_hash) # add a check if the object is not being used
+    object_path = os.path.join(tracker_path, "objects", file_hash)
     try:
         os.remove(object_path)
     except FileNotFoundError:
@@ -400,242 +274,3 @@ def _remove_file_object(tracker_path: str, file_hash: str) -> Tuple[bool, str]:
     except OSError as e:
         return False, f"Failed to remove object file {object_path}: {e}"
     return True, ""
-
-def open_dataset_version(data_id: int, name: str, version_num: float) -> Tuple[bool, str]:
-    """Open a dataset version by copying it to a temp file with proper extension
-     - At the start run cleanup_temp_files to remove old temp files from filesystem
-     - If single file, create a named temp file with the original extension and open it
-     - If multiple files, create a temp directory, reconstruct folder structure, and open it
-    Returns: Tuple[bool, str]: (success, message)
-    """
-    try:
-        removed, failed = cleanup_temp_files()
-        if failed > 0:
-            print(f"Warning: Failed to remove {failed} temporary file(s) from previous view commands.")
-
-        tracker_path = find_data_tracker_root()
-        if tracker_path is None:
-            return False, "Data tracker is not initialized. Please run 'dt init' first."
-
-        all_files = db.get_files_for_version(os.path.join(tracker_path, "tracker.db"), data_id, name, version_num)
-        if not all_files:
-            return False, "No files found for the specified dataset version."
-
-        objects_path = os.path.join(tracker_path, "objects")
-
-        if len(all_files) == 1:
-            file_record = all_files[0]
-            file_hash = file_record['object_hash']
-            rel_path = file_record['relative_path']
-            source = os.path.join(objects_path, file_hash)
-
-            if not os.path.exists(source):
-                raise FileNotFoundError(f"Dataset version not found: {file_hash}")
-
-            ext = os.path.splitext(rel_path)[-1]
-            with tempfile.NamedTemporaryFile(delete=False, suffix=ext, prefix="dt_view_") as temp_file:
-                temp_path = temp_file.name
-                shutil.copy2(source, temp_path)
-            try:
-                open_file(temp_path)
-            except OSError as e:
-                os.unlink(temp_path)
-                raise
-        else:
-            temp_dir = tempfile.mkdtemp(prefix="dt_view_")
-            try:
-                for file_record in all_files:
-                    file_hash = file_record['object_hash']
-                    rel_path = file_record['relative_path']
-                    source = os.path.join(objects_path, file_hash)
-                    dest = os.path.join(temp_dir, rel_path)
-
-                    os.makedirs(os.path.dirname(dest), exist_ok=True)
-                    shutil.copy2(source, dest)
-                open_file(temp_dir)
-            except OSError as e:
-                shutil.rmtree(temp_dir, ignore_errors=True)
-                raise
-
-        return True, f"Opened dataset {data_id}, version {version_num} successfully."
-    except sqlite3.Error as e:
-        return False, f"Database error while opening dataset {data_id} version {version_num}: {e}"
-    except OSError as e:
-        return False, f"Filesystem error while opening dataset {data_id} version {version_num}: {e}"
-
-def open_file(file_path: str) -> None:
-    """Open a file using the default application based on the OS"""
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"File not found: {file_path}")
-    try:
-        if sys.platform == "win32": # Windows
-            os.startfile(file_path)
-        elif sys.platform == "darwin":  # macOS
-            subprocess.run(["open", file_path], check=True)
-        else:  # Linux and other Unix-like systems
-            subprocess.run(["xdg-open", file_path], check=True)
-    except Exception as e:
-        raise OSError(f"Failed to open file: {e}")
-
-def cleanup_temp_files() -> Tuple[int, int]:
-    """Remove temporary files created by previous view commands"""
-    removed: int = 0
-    failed: int = 0
-    try:
-        temp_dir = tempfile.gettempdir()
-        dt_pattern = "dt_view_"
-
-        for item in os.listdir(temp_dir):
-            if item.startswith(dt_pattern):
-                item_path = os.path.join(temp_dir, item)
-                try:
-                    if os.path.isfile(item_path):
-                        os.unlink(item_path)
-                        removed += 1
-                    elif os.path.isdir(item_path):
-                        shutil.rmtree(item_path)
-                        removed += 1
-                except OSError:
-                    failed += 1
-    except OSError:
-        pass
-    return removed, failed
-
-def compare_dataset_versions(data_id: int, name: str, version_1: float, version_2: float) -> Tuple[bool, str]:
-    """Compare two versions of a dataset and show differences
-     - List added, removed, and modified files between versions
-     - Show size differences of the files and total size changes
-     - Format output with color coding for clarity
-    Returns: Tuple[bool, str]: (success, message)
-    """
-    try:
-        init() # initialize colorama
-        tracker_path = find_data_tracker_root()
-        if tracker_path is None:
-            return False, "Data tracker is not initialized. Please run 'dt init' first."
-        db_path = os.path.join(tracker_path, "tracker.db")
-
-        files_v1 = db.get_files_for_version(db_path, data_id, name, version_1)
-        files_v2 = db.get_files_for_version(db_path, data_id, name, version_2)
-        if not files_v1:
-            return False, f"No files found for version {version_1}. Version may be invalid."
-        if not files_v2:
-            return False, f"No files found for version {version_2}. Version may be invalid."
-        set_v1: set = {(file['relative_path'], file['object_hash'],
-                        db.get_object_size(db_path, file['object_hash'])) for file in files_v1}
-
-        set_v2: set = {(file['relative_path'], file['object_hash'],
-                        db.get_object_size(db_path, file['object_hash'])) for file in files_v2}
-
-        if set_v1 == set_v2:
-            return True, f"No differences between version {version_1} and version {version_2}"
-
-        output_lines = [f"Comparison between version {version_1} and version {version_2}:", f"Version: {version_1}"]
-
-        structure_1 = display_structure(db_path, data_id, version_1)
-        output_lines.append(structure_1)
-        structure_2 = display_structure(db_path, data_id, version_2)
-        output_lines.append(f"\nVersion: {version_2}")
-        output_lines.append(structure_2)
-
-        modified_files: set = set()
-        for path_v1, hash_v1, size_v1 in set_v1:
-            for path_v2, hash_v2, size_v2 in set_v2:
-                if path_v1 == path_v2 and hash_v1 != hash_v2:
-                    modified_files.add((path_v1, hash_v1, hash_v2, size_v1, size_v2))
-                    break
-
-        modified_paths = {path for path, _, _, _, _ in modified_files}
-        added_files = {(path, f_hash, size) for path, f_hash, size in (set_v2 - set_v1) if path not in modified_paths}
-        removed_files = {(path, f_hash, size) for path, f_hash, size in (set_v1 - set_v2) if path not in modified_paths}
-        total_size_added = sum(size for _, _, size in added_files)
-        total_size_removed = sum(size for _, _, size in removed_files)
-
-        if modified_files:
-            output_lines.append("\nModified files:")
-            total_size_diff = 0
-            for rel_path, hash_v1, hash_v2, old_size, new_size in sorted(modified_files):
-                size_change = new_size - old_size
-                sign = "+" if size_change > 0 else ""
-                total_size_diff += size_change
-                output_lines.append(f"  {Fore.YELLOW}~ {rel_path} | Size: {format_size(old_size)} → "
-                                    f"{format_size(new_size)} = {sign}{format_size(size_change)}{Fore.RESET}")
-
-                similarity, added, removed = compare_files(tracker_path, hash_v1, hash_v2)
-                output_lines.append(f"    Similarity: {similarity:.2f}%")
-                if added is not None and removed is not None:
-                    output_lines.append(f"    Lines added: {Fore.GREEN}{added}{Fore.RESET}, Lines removed: {Fore.RED}{removed}{Fore.RESET}")
-
-            output_lines.append(f"Total size change: {Fore.YELLOW}{format_size(total_size_diff)}{Fore.RESET}")
-
-        if added_files:
-            output_lines.append("\nAdded files:")
-            for rel_path, obj_hash, size in added_files:
-                output_lines.append(f"  {Fore.GREEN}+ {rel_path} | Size: {format_size(size)}{Fore.RESET}")
-            output_lines.append(f"Total size added: {Fore.GREEN}{format_size(total_size_added)}{Fore.RESET}")
-        if removed_files:
-            output_lines.append("\nRemoved files:")
-            for rel_path, obj_hash, size in removed_files:
-                output_lines.append(f"  {Fore.RED}- {rel_path} | Size: {format_size(size)}{Fore.RESET}")
-            output_lines.append(f"Total size removed: {Fore.RED}{format_size(total_size_removed)}{Fore.RESET}")
-        if not added_files:
-            output_lines.append("No files added.")
-        if not removed_files:
-            output_lines.append("No files removed.")
-        if not modified_files:
-            output_lines.append("No files modified.")
-
-        return True, "\n".join(output_lines)
-    except sqlite3.Error as e:
-        return False, f"Database error while comparing dataset versions: {e}"
-    except OSError as e:
-        return False, f"Filesystem error while comparing dataset versions: {e}"
-
-def format_size(size_in_bytes: int) -> str:
-    """Format size in bytes to a human-readable string"""
-    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-        if size_in_bytes < 1024.0:
-            return f"{size_in_bytes:.2f} {unit}"
-        size_in_bytes /= 1024.0
-    return f"{size_in_bytes:.2f} PB"
-
-def compare_files(tracker_path: str, hash_v1: str, hash_v2: str) -> Tuple[float, int, int]:
-    """Compare two files and return similarity percentage and line changes
-     - Handles text files line-by-line and binary files byte-by-byte by using helper function
-    Returns:
-        Tuple[float, int, int, int]: (similarity_percentage, lines_added, lines_removed)
-    """
-    objects_path = os.path.join(tracker_path, "objects")
-    file1 = os.path.join(objects_path, hash_v1)
-    file2 = os.path.join(objects_path, hash_v2)
-    if not os.path.exists(file1) or not os.path.exists(file2):
-        raise FileNotFoundError("One or both files do not exist")
-
-    try:
-        with open(file1, 'r', encoding='utf-8', errors='ignore') as f1:
-            lines1 = f1.readlines()
-        with open(file2, 'r', encoding='utf-8', errors='ignore') as f2:
-            lines2 = f2.readlines()
-    except UnicodeDecodeError:
-        # Binary file comparison
-        return _compare_binary_files(file1, file2)
-
-    matcher = difflib.SequenceMatcher(None, lines1, lines2)
-    similarity = matcher.ratio() * 100
-
-    diff = list(difflib.unified_diff(lines1, lines2, lineterm=''))
-    added = sum(1 for line in diff if line.startswith('+') and not line.startswith('+++'))
-    removed = sum(1 for line in diff if line.startswith('-') and not line.startswith('---'))
-    return similarity, added, removed
-
-def _compare_binary_files(file1: str, file2: str) -> Tuple[float, None, None]:
-    """Compare binary files byte-by-byte
-     - called by the compare_files function when text read fails
-    Returns: Tuple[float, int, int, int]: (similarity_percentage, None, None)
-    """
-    with open(file1, 'rb') as f1, open(file2, 'rb') as f2:
-        bytes1 = f1.read()
-        bytes2 = f2.read()
-    matcher = difflib.SequenceMatcher(None, bytes1, bytes2)
-    similarity = matcher.ratio() * 100
-    return similarity, None, None

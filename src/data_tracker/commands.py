@@ -1,3 +1,5 @@
+import data_tracker.comparison as comparison
+import data_tracker.file_utils as fu
 import data_tracker.core as core
 import click
 import sys
@@ -112,7 +114,7 @@ def view(id: int, name: str, version: float) -> None:
     if bool(id) == bool(name):
         raise click.UsageError("Provide exactly one of --id or --name")
     try:
-        success, message = core.open_dataset_version(id, name, version)
+        success, message = fu.open_dataset_version(id, name, version)
         if success:
             click.echo(message)
         else:
@@ -122,8 +124,8 @@ def view(id: int, name: str, version: float) -> None:
         sys.exit(1)
 
 @click.command()
-@click.argument("v1", type=float)
-@click.argument("v2", type=float)
+@click.argument("v1", type=float, default=1.0)
+@click.argument("v2", type=float, default=123.123) # keep an eye on the defaults
 @click.option("--id", type=int, default=None, help="ID of the dataset")
 @click.option("--name", default=None, help="Name of the dataset")
 def compare(id: int, name: str, v1: float, v2: float) -> None:
@@ -131,7 +133,30 @@ def compare(id: int, name: str, v1: float, v2: float) -> None:
     if bool(id) == bool(name):
         raise click.UsageError("Provide exactly one of --id or --name")
     try:
-        success, message = core.compare_dataset_versions(id, name, v1, v2)
+        success, message = comparison.compare_dataset_versions(id, name, v1, v2)
+        if success:
+            click.echo(message)
+        else:
+            click.secho(message, fg="red")
+    except Exception as e:
+        click.secho(f"Error: {e}", fg="red", err=True)
+        sys.exit(1)
+
+@click.command()
+@click.argument("export_path")
+@click.option("--id", type=int, default=None, help="ID of the dataset to export") # make id and name into one argument?
+@click.option("--name", default=None, help="Name of the dataset to export")
+@click.option("-v", "--version", type=float, required=True, help="Version of the dataset to export")
+@click.option("-f", "--force", is_flag=True, default=None, help="Overwrite existing files at the export location")
+@click.option("-r", "--preserve-root", is_flag=True, default=None, help="Preserve the root dataset directory name")
+def export(export_path: str, id: int, name: str,
+           version: float, force: bool, preserve_root: bool) -> None:
+    """Export a specific version of a dataset to a specified location"""
+    try:
+        if bool(id) == bool(name):
+            raise click.UsageError("Provide exactly one of --id or --name")
+
+        success, message = fu.export_file(export_path, id, name, version, force, preserve_root)
         if success:
             click.echo(message)
         else:
@@ -142,15 +167,15 @@ def compare(id: int, name: str, v1: float, v2: float) -> None:
 
 @click.command()
 @click.option("--image", required=True, help="Path to the image")
-@click.option("--input", required=True, help="Path to the input data") # is the shadowing a problem?
-@click.option("--output", required=True, help="Path to the output data")
+@click.option("-in", "--input-data", required=True, help="Path to the input data") # is the shadowing a problem?
+@click.option("-out", "--output-data", required=True, help="Path to the output data")
 @click.option("--command", required=True, help="Transformation command to apply")
-def transform(image: str, input: str, output: str, command: str) -> None:
+def transform(image: str, input_data: str, output_data: str, command: str) -> None:
     """Apply a transformation to the data using a containerized environment"""
     pass
 
 
 
-# do not allow updating unchanged data, create get_db_path function?
+# create get_db_path function? add validate version function?
 # add export command for exporting and restoring datasets
 # add some tests
