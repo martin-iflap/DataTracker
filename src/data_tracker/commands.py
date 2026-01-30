@@ -1,3 +1,4 @@
+import data_tracker.docker_manager as docker_m
 import data_tracker.comparison as comparison
 import data_tracker.file_utils as fu
 import data_tracker.core as core
@@ -169,10 +170,21 @@ def export(export_path: str, id: int, name: str,
 @click.option("--image", required=True, help="Path to the image")
 @click.option("-in", "--input-data", required=True, help="Path to the input data") # is the shadowing a problem?
 @click.option("-out", "--output-data", required=True, help="Path to the output data")
-@click.option("--command", required=True, help="Transformation command to apply")
-def transform(image: str, input_data: str, output_data: str, command: str) -> None:
+@click.option("--command", required=True, help="Transformation command to apply use mounted /input and /output")
+@click.option("-f", "--force", is_flag=True, default=False, help="Force execution without command validation")
+def transform(image: str, input_data: str, output_data: str, command: str, force: bool) -> None:
     """Apply a transformation to the data using a containerized environment"""
-    pass
+    try:
+        if not docker_m.is_docker_installed():
+            raise EnvironmentError("Docker is not installed or not found in PATH.")
+        success, message = docker_m.transform_data(image, input_data, output_data, command, force)
+        if success:
+            click.echo(message)
+        else:
+            click.secho(message, fg="red")
+    except Exception as e:
+        click.secho(f"Error: {e}", fg="red", err=True)
+        sys.exit(1)
 
 
 
