@@ -1,9 +1,10 @@
-import data_tracker.docker_manager as docker_m
+import data_tracker.commands_helper as helper
 import data_tracker.comparison as comparison
 import data_tracker.file_utils as fu
 import data_tracker.core as core
 import click
 import sys
+import os
 
 @click.command()
 def init() -> None:
@@ -168,20 +169,54 @@ def export(export_path: str, id: int, name: str,
 
 @click.command()
 @click.option("--image", required=True, help="Path to the image")
-@click.option("-in", "--input-data", required=True, help="Path to the input data") # is the shadowing a problem?
-@click.option("-out", "--output-data", required=True, help="Path to the output data")
-@click.option("--command", required=True, help="Transformation command to apply use mounted /input and /output")
-@click.option("-f", "--force", is_flag=True, default=False, help="Force execution without command validation")
-def transform(image: str, input_data: str, output_data: str, command: str, force: bool) -> None:
+@click.option("-in", "--input-data", required=True,
+              help="Path to the input data")
+@click.option("-out", "--output-data", required=True,
+              help="Path to the output data")
+@click.option("--command", required=True,
+              help="Transformation command to apply use mounted /input and /output")
+@click.option("-f", "--force", is_flag=True, default=False,
+              help="Force execution without command validation")
+@click.option("--auto-track", is_flag=True, default=False,
+              help="Auto-add input if not tracked, then version output")
+@click.option("--no-track", is_flag=True, default=False,
+              help="Skip versioning even if input is tracked")
+@click.option("--dataset-id", type=int, default=None,
+              help="Explicitly specify which dataset to update (advanced)")
+@click.option("-m", "--message", default=None,
+              help="Custom message for auto-versioned output")
+def transform(image: str, input_data: str, output_data: str,
+              command: str, force: bool, auto_track: bool,
+              no_track: bool, dataset_id: int, message: str) -> None:
     """Apply a transformation to the data using a containerized environment"""
     try:
-        if not docker_m.is_docker_installed():
-            raise EnvironmentError("Docker is not installed or not found in PATH.")
-        success, message = docker_m.transform_data(image, input_data, output_data, command, force)
+        if auto_track and no_track:
+            raise click.UsageError("Cannot use --auto-track and --no-track together")
+
+        success, result = helper.validate_transform_environment()
+        if not success:
+            click.secho(result, fg="red")
+            sys.exit(1)
+
+        tracker_path = result
+        db_path = os.path.join(tracker_path, "tracker.db")
+
+        success, message, metadata = helper.execute_transform(
+            db_path, image, input_data, output_data,
+            command, force, auto_track, no_track, dataset_id, message
+        )
+
         if success:
             click.echo(message)
+            if metadata['tracked']:
+                click.secho(
+                    f"Versioned: {metadata['old_version']} → {metadata['new_version']}",
+                    fg="green"
+                )
         else:
             click.secho(message, fg="red")
+            sys.exit(1)
+
     except Exception as e:
         click.secho(f"Error: {e}", fg="red", err=True)
         sys.exit(1)
@@ -189,5 +224,12 @@ def transform(image: str, input_data: str, output_data: str, command: str, force
 
 
 # create get_db_path function? add validate version function?
-# add export command for exporting and restoring datasets
+# dataset renaming and note updates
+# storage statistics
+# dataset tagging (like git tags)
+# difference previewing before update command
+# batch file operations like export all
+# config file?
+# add jupiter extension later?
 # add some tests
+# improve doc strings documentation

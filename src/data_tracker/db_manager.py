@@ -1,5 +1,6 @@
 from typing import Tuple
 import sqlite3
+import os
 
 
 def open_database(db_path: str) -> sqlite3.Connection:
@@ -129,6 +130,14 @@ def get_id_from_name(conn: sqlite3.Connection, name: str) -> int:
         raise ValueError(f"Dataset with name '{name}' does not exist.")
     return row['id']
 
+def get_dataset_name_from_id(db_path: str, dataset_id: int) -> str | None:
+    """Get the dataset name from its ID and return it"""
+    with open_database(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM datasets WHERE id = ?", (dataset_id,))
+        row = cursor.fetchone()
+        return row['name'] if row else None
+
 def dataset_exists(conn: sqlite3.Connection, dataset_id: int, name: str) -> bool:
     """Check if a dataset exists in the datasets tracker.db table by its ID or name"""
     cursor = conn.cursor()
@@ -198,3 +207,20 @@ def object_is_used(conn: sqlite3.Connection, object_hash: str) -> bool:
     cursor = conn.cursor()
     cursor.execute("SELECT 1 FROM versions WHERE object_hash = ?", (object_hash,))
     return cursor.fetchone() is not None
+
+def find_dataset_by_path(db_path: str, path: str) -> int | None:
+    """Find dataset by matching original_path"""
+    abs_path = os.path.abspath(path)
+
+    with open_database(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT dataset_id
+            FROM versions
+            WHERE original_path = ?
+            ORDER BY version DESC
+            LIMIT 1
+        """, (abs_path,))
+
+        row = cursor.fetchone()
+        return row['dataset_id'] if row else None
