@@ -168,12 +168,12 @@ def export(export_path: str, id: int, name: str,
         sys.exit(1)
 
 @click.command()
-@click.option("--image", required=True, help="Path to the image")
+@click.option("-i", "--image", required=True, help="Path to the image")
 @click.option("-in", "--input-data", required=True,
               help="Path to the input data")
 @click.option("-out", "--output-data", required=True,
               help="Path to the output data")
-@click.option("--command", required=True,
+@click.option("-c", "--command", required=True,
               help="Transformation command to apply use mounted /input and /output")
 @click.option("-f", "--force", is_flag=True, default=False,
               help="Force execution without command validation")
@@ -181,14 +181,19 @@ def export(export_path: str, id: int, name: str,
               help="Auto-add input if not tracked, then version output")
 @click.option("--no-track", is_flag=True, default=False,
               help="Skip versioning even if input is tracked")
-@click.option("--dataset-id", type=int, default=None,
+@click.option("-id", "--dataset-id", type=int, default=None,
               help="Explicitly specify which dataset to update (advanced)")
+@click.option("-v", "--version", type=float, default=None,
+              help="Manually specify version number for auto-versioning (advanced)")
 @click.option("-m", "--message", default=None,
               help="Custom message for auto-versioned output")
 def transform(image: str, input_data: str, output_data: str,
               command: str, force: bool, auto_track: bool,
-              no_track: bool, dataset_id: int, message: str) -> None:
-    """Apply a transformation to the data using a containerized environment"""
+              no_track: bool, dataset_id: int, message: str, version: float) -> None:
+    """Apply a transformation to the data using a containerized environment
+     - check the environment, tracker initialization and options
+     - use the helper execute_transform function from commands_helper.py
+    """
     try:
         if auto_track and no_track:
             raise click.UsageError("Cannot use --auto-track and --no-track together")
@@ -201,9 +206,11 @@ def transform(image: str, input_data: str, output_data: str,
         tracker_path = result
         db_path = os.path.join(tracker_path, "tracker.db")
 
+        if message:
+            message = message.strip()
         success, message, metadata = helper.execute_transform(
-            db_path, image, input_data, output_data,
-            command, force, auto_track, no_track, dataset_id, message
+            db_path, image, input_data, output_data, command,
+            force, auto_track, no_track, dataset_id, message, version
         )
 
         if success:
@@ -224,6 +231,8 @@ def transform(image: str, input_data: str, output_data: str,
 
 
 # create get_db_path function? add validate version function?
+# add database locks and retries?
+# add presets for transform command?
 # dataset renaming and note updates
 # storage statistics
 # dataset tagging (like git tags)

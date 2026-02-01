@@ -10,13 +10,14 @@ def execute_transform(
     db_path: str,
     image: str,
     input_data: str,
-    output_data: str, # check edge case scenarios like output == input
-    command: str, # check edge cases like empty command
-    force: bool, # check edge cases like added new dataset but transform fails
-    auto_track: bool, # cover better database function errors
+    output_data: str,
+    command: str,
+    force: bool,
+    auto_track: bool,
     no_track: bool,
     dataset_id: int,
-    message: str
+    message: str,
+    version: float
 ) -> Tuple[bool, str, dict]:
     """Execute transformation with auto-versioning logic.
     Returns: (success, message, metadata_dict)
@@ -34,14 +35,17 @@ def execute_transform(
         'new_version': None,
         'tracked': False
     }
-    if dataset_id:
-        found_dataset_id = dataset_id
-        dataset_name = db.get_dataset_name_from_id(db_path, dataset_id)
-        if not dataset_name:
-            return False, f"Dataset with ID {dataset_id} does not exist", metadata
-    else:
-        found_dataset_id = db.find_dataset_by_path(db_path, input_data)
-        dataset_name = db.get_dataset_name_from_id(db_path, found_dataset_id) if found_dataset_id else None
+    try:
+        if dataset_id:
+            found_dataset_id = dataset_id
+            dataset_name = db.get_dataset_name_from_id(db_path, dataset_id)
+            if not dataset_name:
+                return False, f"Dataset with ID {dataset_id} does not exist", metadata
+        else:
+            found_dataset_id = db.find_dataset_by_path(db_path, input_data)
+            dataset_name = db.get_dataset_name_from_id(db_path, found_dataset_id) if found_dataset_id else None
+    except Exception as e:
+        return False, f"Database error while checking dataset: {e}", metadata
 
     should_track = False
     should_add_input = False
@@ -65,29 +69,66 @@ def execute_transform(
         )
 
     if should_add_input: # Add input as new dataset
-        success, msg = core.add_data(input_data, title=None,
-            version=1.0, message=message or "Auto-added for transform") # what if message is empty string?
+        success, msg = core.add_data(
+            input_data, title=None,
+            version=1.0, message=message or "Auto-added for transform"
+        )
         if not success:
             return False, f"Failed to add input: {msg}", metadata
-
-        found_dataset_id = db.find_dataset_by_path(db_path, input_data)
-        dataset_name = db.get_dataset_name_from_id(db_path, found_dataset_id)
-        status_msg += f"\nAdded as '{dataset_name}' (ID: {found_dataset_id})"
+        try:
+            found_dataset_id = db.find_dataset_by_path(db_path, input_data)
+            dataset_name = db.get_dataset_name_from_id(db_path, found_dataset_id)
+            status_msg += f"\nAdded as '{dataset_name}' (ID: {found_dataset_id})"
+        except Exception as e:
+            return False, (
+                f"Critical: Dataset added but database lookup failed: {e}\n\n"
+                f"Your database may be corrupted. Run:\n"
+                f"  dt ls  # Check for orphaned dataset\n"
+                f"  dt remove --id <ID>  # Remove it if found\n"
+                f"Input path: {os.path.abspath(input_data)}"
+            ), metadata
 
     success, transform_msg = docker_m.transform_data( # run transformation
-        image, input_data, output_data, command, force
-    )
+        image, input_data, output_data, command, force)
     if not success:
-        return False, transform_msg, metadata
+        if found_dataset_id:
+            try:
+                core.remove_data(found_dataset_id, None)
+                return False, (f"Transformation failed: {transform_msg}\n"
+                               f"Rolled back: Removed auto-added dataset '{dataset_name}'"), metadata
+            except Exception as e:
+                return False, (f"Transformation failed: {transform_msg}\n"
+                               f"Rollback failed: {e}\n"
+                               f"Failed to remove dataset '{dataset_name}' ID: {found_dataset_id}"
+                               f"Manually run: dt remove --id {found_dataset_id}"), metadata
+        else:
+            return False, transform_msg, metadata
 
     if should_track and found_dataset_id: # track output
-        latest_version = db.get_latest_version(db.open_database(db_path), found_dataset_id)
-        new_version = round(latest_version + 0.1, 1) # take a look at this logic later
+        try:
+            with db.open_database(db_path) as conn:
+                latest_version = db.get_latest_version(conn, found_dataset_id)
+                if version:
+                    if not db.check_version_exists(conn, found_dataset_id, version):
+                        new_version = version
+                    else:
+                        status_msg += (f"\nProvided --version {version} is not valid for dataset ID {found_dataset_id}."
+                                       f"\nOutput not versioned. To version manually, run:"
+                                       f"\ndt update {os.path.abspath(output_data)} --id {found_dataset_id} -v <VERSION>"
+                                       f"\nSuggested next version: {round(latest_version + 0.1, 1)}")
+                        return True, status_msg, metadata
+                else:
+                    new_version = round(latest_version + 0.1, 1)
+        except Exception as e:
+            status_msg += (f"\nTransform succeeded but version calculation failed: {e}"
+                           f"\nOutput not versioned. To version manually, run:"
+                           f"\ndt update {os.path.abspath(output_data)} --id {found_dataset_id} -v <VERSION>")
+            return True, status_msg, metadata
 
         success, update_msg = core.update_data(
             output_data, data_id=found_dataset_id,
             name=None, version=new_version,
-            message=message or f"Transformed with {image}" # what if message is empty string?
+            message=message or f"Transformed with {image}"
         )
 
         if success:
@@ -98,10 +139,11 @@ def execute_transform(
             metadata['tracked'] = True
             status_msg += f"\nUpdated '{dataset_name}' to version {new_version}"
         else:
-            status_msg += f"\nTransform succeeded but versioning failed: {update_msg}"
+            status_msg += (f"\nTransform succeeded but versioning failed: {update_msg}"
+                           f"\nRun dt update --id {found_dataset_id} to version manually")
 
     output_abs = os.path.abspath(output_data)
-    status_msg += f"\n→ Output written to: {output_abs}"
+    status_msg += f"\nOutput written to: {output_abs}"
     return True, status_msg, metadata
 
 def validate_transform_environment() -> Tuple[bool, str]:

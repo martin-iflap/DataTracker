@@ -55,14 +55,14 @@ def initialize_database(db_path: str) -> Tuple[bool, str]:
 def insert_dataset(conn: sqlite3.Connection, name: str, notes: str) -> int:
     """Insert a new dataset into the dataset table of the tracker.db database"""
     cursor = conn.cursor()
-    if name is None:
-        cursor.execute("SELECT id FROM datasets ORDER BY id DESC LIMIT 1")
-        row = cursor.fetchone()
-        next_num = (row[0] + 1) if row else 1
-        name = f"dataset-{next_num}"
 
     cursor.execute("INSERT INTO datasets (name, notes) VALUES (?, ?)", (name, notes))
-    return cursor.lastrowid
+    id = cursor.lastrowid
+
+    if name is None:
+        name = f"dataset-{id}"
+        cursor.execute("UPDATE datasets SET name = ? WHERE id = ?", (name, id))
+    return id
 
 def insert_object(conn: sqlite3.Connection, file_hash: str, size: int) -> None:
     """Insert a new object into the objects table of the tracker.db database"""
@@ -224,3 +224,14 @@ def find_dataset_by_path(db_path: str, path: str) -> int | None:
 
         row = cursor.fetchone()
         return row['dataset_id'] if row else None
+
+def check_version_exists(conn: sqlite3.Connection, dataset_id: int, version: float) -> bool:
+    """Check if a specific version exists for a dataset in the versions table
+     - Return True if version exists, else False
+    """
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT 1 FROM versions WHERE dataset_id = ? AND version = ?",
+        (dataset_id, version)
+    )
+    return cursor.fetchone() is not None

@@ -77,6 +77,9 @@ def _add_files_to_tracker(files: list[Tuple[str, str]], tracker_path: str,
         action: str = "added" if dataset_id is None else "updated"
 
         with db.open_database(db_path) as conn:
+            if version and not db.check_version_exists(conn, dataset_id, version):
+                return False, f"Version {version} already exists for the specified dataset."
+
             if dataset_id is None:
                 if title and db.dataset_exists(conn, None, title):
                     return False, f"Dataset with name '{title}' already exists."
@@ -170,7 +173,7 @@ def get_history(data_id: int, name: str, detailed_flag: bool) -> Tuple[bool, str
 
         entire_history = db.get_dataset_history(os.path.join(tracker_path, "tracker.db"), data_id, name)
         if not entire_history:
-            return True, "No history found for the specified dataset."
+            return True, "No history found for the specified dataset. ID may be invalid."
 
         output_lines = ["Dataset History:"]
         for record in entire_history:
@@ -190,7 +193,11 @@ def get_history(data_id: int, name: str, detailed_flag: bool) -> Tuple[bool, str
         return False, f"Filesystem error while retrieving history: {e}"
 
 def update_data(data_path: str, data_id: int, name: str, version: float, message: str) -> Tuple[bool, str]:
-    """Add a new version of existing dataset to the tracker and tracker.db"""
+    """Add a new version of existing dataset to the tracker and tracker.db
+     - Similar to add_data but requires existing dataset id or name
+     - Validates dataset existence before adding new version
+    Returns: Tuple[bool, str]: (success, message)
+    """
     try:
         tracker_path = fu.find_data_tracker_root()
         if tracker_path is None:
