@@ -91,7 +91,7 @@ def execute_transform(
     success, transform_msg = docker_m.transform_data( # run transformation
         image, input_data, output_data, command, force)
     if not success:
-        if found_dataset_id:
+        if found_dataset_id and should_add_input:
             try:
                 core.remove_data(found_dataset_id, None)
                 return False, (f"Transformation failed: {transform_msg}\n"

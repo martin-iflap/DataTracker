@@ -6,6 +6,7 @@ requires-python = ">=3.14"
 dependencies = [
     "click>=8.3.1",
     "colorama>=0.4.6",
+    "pytest>=9.0.2",
 ]
 
 [project.scripts]
