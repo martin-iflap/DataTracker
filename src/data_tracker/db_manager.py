@@ -1,17 +1,25 @@
+from contextlib import contextmanager
 from typing import Tuple
 import sqlite3
 import os
 
 
-def open_database(db_path: str) -> sqlite3.Connection:
-    """Open a connection to the SQLite database with foreign key support
-     - use it for all database operations for consistency and proper closing
-     - use it as a context manager (built in to sqlite3.Connection)
+@contextmanager
+def open_database(db_path: str):
+    """Open a connection to the SQLite database with foreign key support.
+    ACHTUNG! ATTENTION! ATENZIONE!
+    IMPORTANT: You must call conn.commit() to persist changes!
+    Yields:
+        sqlite3.Connection: The database connection object.
+    connection is automatically closed after use.
     """
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 def initialize_database(db_path: str) -> Tuple[bool, str]:
     """Initialize the SQLite database with required tables"""
@@ -73,10 +81,12 @@ def insert_version(conn: sqlite3.Connection, data_set_id: int,
                    object_hash: str, version: int,
                    data_path: str, message: str = None) -> int:
     """Insert a new version into the versions table of the tracker.db database"""
+    normalized_path = os.path.normpath(os.path.abspath(data_path))
+
     cursor = conn.cursor()
     cursor.execute(
         "INSERT OR IGNORE INTO versions (dataset_id, object_hash, version, original_path, message) VALUES (?, ?, ?, ?, ?)",
-        (data_set_id, object_hash, version, data_path, message))
+        (data_set_id, object_hash, version, normalized_path, message))
     return cursor.lastrowid
 
 def insert_files(conn: sqlite3.Connection, version_id: int, object_hash: str,
@@ -86,14 +96,14 @@ def insert_files(conn: sqlite3.Connection, version_id: int, object_hash: str,
         "INSERT INTO files (version_id, object_hash, relative_path) VALUES (?, ?, ?)",
         (version_id, object_hash, relative_path))
 
-def get_all_datasets(db_path: str) -> list[sqlite3.Row]:
+def get_all_datasets(db_path: str) -> list[dict]:
     """Retrieve all datasets from the datasets table of the tracker.db"""
     with open_database(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM datasets")
-        return cursor.fetchall()
+        return [dict(row) for row in cursor.fetchall()]
 
-def get_dataset_history(db_path: str, dataset_id: int, name: str) -> list[sqlite3.Row]:
+def get_dataset_history(db_path: str, dataset_id: int, name: str) -> list[dict]:
     """Retrieve all the version information for a specific dataset from the tracker.db version table"""
     with open_database(db_path) as conn:
         cursor = conn.cursor()
@@ -104,9 +114,9 @@ def get_dataset_history(db_path: str, dataset_id: int, name: str) -> list[sqlite
         cursor.execute("""SELECT id, object_hash, version, original_path, message, created_at
                           FROM versions WHERE dataset_id = ? ORDER BY version""",
                        (dataset_id,))
-        return cursor.fetchall()
+        return [dict(row) for row in cursor.fetchall()]
 
-def get_files_for_version(db_path, dataset_id: int, name: str, version: float) -> list[sqlite3.Row]:
+def get_files_for_version(db_path, dataset_id: int, name: str, version: float) -> list[dict]:
     """Retrieve all files associated with a specific version ID from the tracker.db files table"""
     with open_database(db_path) as conn:
         cursor = conn.cursor()
@@ -119,7 +129,7 @@ def get_files_for_version(db_path, dataset_id: int, name: str, version: float) -
                 SELECT id FROM versions
                 WHERE dataset_id = ? AND version = ?
             )""", (dataset_id, version))
-        return cursor.fetchall()
+        return [dict(row) for row in cursor.fetchall()]
 
 def get_id_from_name(conn: sqlite3.Connection, name: str) -> int:
     """Get the dataset ID from its name and return it"""
@@ -130,13 +140,15 @@ def get_id_from_name(conn: sqlite3.Connection, name: str) -> int:
         raise ValueError(f"Dataset with name '{name}' does not exist.")
     return row['id']
 
-def get_dataset_name_from_id(db_path: str, dataset_id: int) -> str | None:
+def get_dataset_name_from_id(db_path: str, dataset_id: int) -> str:
     """Get the dataset name from its ID and return it"""
     with open_database(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT name FROM datasets WHERE id = ?", (dataset_id,))
         row = cursor.fetchone()
-        return row['name'] if row else None
+        if row is None:
+            raise ValueError(f"Dataset with ID '{dataset_id}' does not exist.")
+        return row['name']
 
 def dataset_exists(conn: sqlite3.Connection, dataset_id: int, name: str) -> bool:
     """Check if a dataset exists in the datasets tracker.db table by its ID or name"""

@@ -44,6 +44,8 @@ def execute_transform(
         else:
             found_dataset_id = db.find_dataset_by_path(db_path, input_data)
             dataset_name = db.get_dataset_name_from_id(db_path, found_dataset_id) if found_dataset_id else None
+    except ValueError as e:
+        return False, f"Dataset lookup failed: {e}\nRun 'dt ls' to see available datasets", metadata
     except Exception as e:
         return False, f"Database error while checking dataset: {e}", metadata
 
@@ -79,6 +81,12 @@ def execute_transform(
             found_dataset_id = db.find_dataset_by_path(db_path, input_data)
             dataset_name = db.get_dataset_name_from_id(db_path, found_dataset_id)
             status_msg += f"\nAdded as '{dataset_name}' (ID: {found_dataset_id})"
+        except ValueError as e:
+            return False, (
+                f"Critical: Dataset added but lookup failed: {e}\n\n"
+                f"Your database may be corrupted. Run:\n"
+                f"  dt ls  # Check for orphaned dataset"
+            ), metadata
         except Exception as e:
             return False, (
                 f"Critical: Dataset added but database lookup failed: {e}\n\n"

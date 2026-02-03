@@ -77,7 +77,7 @@ def _add_files_to_tracker(files: list[Tuple[str, str]], tracker_path: str,
         action: str = "added" if dataset_id is None else "updated"
 
         with db.open_database(db_path) as conn:
-            if version and not db.check_version_exists(conn, dataset_id, version):
+            if version and db.check_version_exists(conn, dataset_id, version):
                 return False, f"Version {version} already exists for the specified dataset."
 
             if dataset_id is None:
