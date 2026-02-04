@@ -75,7 +75,10 @@ def compare_dataset_versions(dataset_id: int, name: str,
                                     f"{fu.format_size(new_size)} = {sign}{fu.format_size(size_change)}{Fore.RESET}")
 
                 similarity, added, removed = compare_files(tracker_path, hash_v1, hash_v2)
-                output_lines.append(f"    Similarity: {similarity:.2f}%")
+                if not similarity:
+                    output_lines.append("    Could not compare files (files might be missing or corrupted)")
+                else:
+                    output_lines.append(f"    Similarity: {similarity:.2f}%")
                 if added is not None and removed is not None:
                     output_lines.append(f"    Lines added: {Fore.GREEN}{added}{Fore.RESET}, Lines removed: {Fore.RED}{removed}{Fore.RESET}")
 
@@ -116,14 +119,13 @@ def compare_files(tracker_path: str, hash_v1: str, hash_v2: str) -> Tuple[float,
     if not os.path.exists(file1) or not os.path.exists(file2):
         raise FileNotFoundError("One or both files do not exist")
 
-    try:
-        with open(file1, 'r', encoding='utf-8', errors='ignore') as f1:
-            lines1 = f1.readlines()
-        with open(file2, 'r', encoding='utf-8', errors='ignore') as f2:
-            lines2 = f2.readlines()
-    except UnicodeDecodeError:
-        # Binary file comparison
+    if _is_binary(file1) or _is_binary(file2):
         return _compare_binary_files(file1, file2)
+
+    with open(file1, 'r', encoding='utf-8', errors='ignore') as f1:
+        lines1 = f1.readlines()
+    with open(file2, 'r', encoding='utf-8', errors='ignore') as f2:
+        lines2 = f2.readlines()
 
     matcher = difflib.SequenceMatcher(None, lines1, lines2)
     similarity = matcher.ratio() * 100
@@ -132,6 +134,23 @@ def compare_files(tracker_path: str, hash_v1: str, hash_v2: str) -> Tuple[float,
     added = sum(1 for line in diff if line.startswith('+') and not line.startswith('+++'))
     removed = sum(1 for line in diff if line.startswith('-') and not line.startswith('---'))
     return similarity, added, removed
+
+def _is_binary(file_path: str) -> bool:
+    """Check if a file is binary by reading its first 8192 bytes
+     - check for null bytes and non-text characters ratio
+    """
+    chunk_size = 8192
+    with open(file_path, 'rb') as f:
+        chunk = f.read(chunk_size)
+    if not chunk:
+        return False
+
+    if chunk.count(b'\0') > 1:
+        return True
+
+    text_chars = bytearray({7, 8, 9, 10, 12, 13, 27} | set(range(0x20, 0x100)) - {0x7f})
+    non_text = chunk.translate(None, text_chars)
+    return len(non_text) / len(chunk) > 0.30
 
 def _compare_binary_files(file1: str, file2: str) -> Tuple[float, None, None]:
     """Compare binary files byte-by-byte
