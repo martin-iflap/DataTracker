@@ -336,6 +336,25 @@ class TestVersionOperations:
 
         assert db.get_latest_version(conn, dataset_id) == 2.0
 
+    def test_get_first_version_empty_dataset(self, in_memory_db):
+        """Test getting first version for dataset with no versions"""
+        dataset_id = db.insert_dataset(in_memory_db, "test-dataset", None)
+        assert db.get_first_version(in_memory_db, dataset_id) is None
+
+    def test_get_first_version_with_versions(self, dataset_with_version):
+        """Test getting first version for dataset with multiple versions
+         - insert additional versions to test
+        """
+        conn = dataset_with_version['conn']
+        dataset_id = dataset_with_version['dataset_id']
+
+        db.insert_object(conn, "def12", 2000)
+        db.insert_version(conn, dataset_id, "def12", 1.5, "/path2", None)
+        db.insert_object(conn, "ghi789", 3000)
+        db.insert_version(conn, dataset_id, "ghi789", 2.0, "/path3", None)
+
+        assert db.get_first_version(conn, dataset_id) == 1.0
+
     def test_delete_versions(self, dataset_with_version):
         """Test deleting all versions for a dataset"""
         conn = dataset_with_version['conn']

@@ -13,7 +13,7 @@ def open_database(db_path: str):
         sqlite3.Connection: The database connection object.
     connection is automatically closed after use.
     """
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=5)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     try:
@@ -176,6 +176,13 @@ def get_latest_version(conn: sqlite3.Connection, dataset_id: int) -> float:
     result = cursor.fetchone()
     max_version = result[0] if result[0] is not None else 0
     return float(max_version)
+
+def get_first_version(conn: sqlite3.Connection, dataset_id: int) -> float | None:
+    """Get the lowest version number for a dataset with a given ID"""
+    cursor = conn.cursor()
+    cursor.execute("SELECT MIN(version) FROM versions WHERE dataset_id = ?", (dataset_id,))
+    result = cursor.fetchone()
+    return float(result[0]) if result[0] is not None else None
 
 def get_object_size(db_path: str, object_hash: str) -> int:
     """Retrieve object size from the objects table of tracker.db by its hash"""

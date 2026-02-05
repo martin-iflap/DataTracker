@@ -22,11 +22,20 @@ def compare_dataset_versions(dataset_id: int, name: str,
             return False, "Data tracker is not initialized. Please run 'dt init' first."
         db_path = os.path.join(tracker_path, "tracker.db")
 
-        if version_2 == 123.123:
+        if version_1 is None:
+            with db.open_database(db_path) as conn:
+                version_1 = db.get_first_version(conn, dataset_id)
+                if version_1 is None:
+                    return False, f"Could not determine first version for dataset {name if name else ""} ID:{dataset_id}."
+
+        if version_2 is None:
             with db.open_database(db_path) as conn:
                 version_2 = db.get_latest_version(conn, dataset_id)
-                if version_2 is None:
+                if version_2 == 0.0:
                     return False, f"Could not determine latest version for dataset {name if name else ""} ID:{dataset_id}."
+
+        if version_1 == version_2:
+            return False, "Cannot compare the same version to itself (file might have only 1 version)."
 
         files_v1 = db.get_files_for_version(db_path, dataset_id, name, version_1)
         files_v2 = db.get_files_for_version(db_path, dataset_id, name, version_2)

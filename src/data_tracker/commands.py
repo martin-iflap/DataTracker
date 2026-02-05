@@ -126,8 +126,8 @@ def view(id: int, name: str, version: float) -> None:
         sys.exit(1)
 
 @click.command()
-@click.argument("v1", type=float, default=1.0)
-@click.argument("v2", type=float, default=123.123) # keep an eye on the defaults
+@click.argument("v1", type=float, default=None)
+@click.argument("v2", type=float, default=None)
 @click.option("--id", type=int, default=None, help="ID of the dataset")
 @click.option("--name", default=None, help="Name of the dataset")
 def compare(id: int, name: str, v1: float, v2: float) -> None:
@@ -146,7 +146,7 @@ def compare(id: int, name: str, v1: float, v2: float) -> None:
 
 @click.command()
 @click.argument("export_path")
-@click.option("--id", type=int, default=None, help="ID of the dataset to export") # make id and name into one argument?
+@click.option("--id", type=int, default=None, help="ID of the dataset to export")
 @click.option("--name", default=None, help="Name of the dataset to export")
 @click.option("-v", "--version", type=float, required=True, help="Version of the dataset to export")
 @click.option("-f", "--force", is_flag=True, default=None, help="Overwrite existing files at the export location")
@@ -230,8 +230,8 @@ def transform(image: str, input_data: str, output_data: str,
 
 
 
-# create get_db_path function? add validate version function?
-# add database locks and retries?
+# make id and name into one argument?
+# create get_db_path function?
 # add presets for transform command?
 # dataset renaming and note updates
 # storage statistics
@@ -240,5 +240,4 @@ def transform(image: str, input_data: str, output_data: str,
 # batch file operations like export all
 # config file?
 # add jupiter extension later?
-# add some tests
-# improve doc strings documentation
+# tests
