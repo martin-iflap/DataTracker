@@ -228,16 +228,30 @@ def transform(image: str, input_data: str, output_data: str,
         click.secho(f"Error: {e}", fg="red", err=True)
         sys.exit(1)
 
+@click.command()
+def storage() -> None:
+    """Show statistics about the tracked datasets
+     - show the number of objects and total size
+    """
+    try:
+        success, message = fu.get_storage_stats()
+        if success:
+            click.echo(message)
+        else:
+            click.secho(message, fg="red")
+    except Exception as e:
+        click.secho(f"Error: {e}", fg="red", err=True)
+        sys.exit(1)
 
 
-# make id and name into one argument?
+
 # create get_db_path function?
 # add presets for transform command?
 # dataset renaming and note updates
-# storage statistics
+# validate name function
+# better transform error messages
 # dataset tagging (like git tags)
 # difference previewing before update command
 # batch file operations like export all
 # config file?
-# add jupiter extension later?
 # tests

@@ -156,12 +156,22 @@ def execute_transform(
 
 def validate_transform_environment() -> Tuple[bool, str]:
     """Validate Docker and tracker are ready for transform command
-    Returns: (success, error_message)
+    Returns: (success, tracker_path_or_error_message)
     """
     if not docker_m.is_docker_installed():
-        return False, "Docker is not installed or not found in PATH"
+        return False, (
+            "Docker is not installed or not found in PATH.\n\n"
+            "To use the transform command, you need Docker:\n"
+            "  • Windows/Mac: Install Docker Desktop from docker.com\n"
+            "  • Linux: Install Docker Engine using your package manager\n\n"
+            "After installation, verify with: docker --version"
+        )
+
     tracker_path = fu.find_data_tracker_root()
     if not tracker_path:
-        return False, "Data tracker not initialized. Run 'dt init' first"
+        return False, (
+            "Data tracker not initialized in this directory.\n\n"
+            "Run 'dt init' first to initialize tracking, then try again."
+        )
 
     return True, tracker_path

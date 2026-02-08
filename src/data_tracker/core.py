@@ -1,3 +1,4 @@
+import data_tracker.validation as validation
 import data_tracker.db_manager as db
 import data_tracker.file_utils as fu
 from typing import Tuple
@@ -35,6 +36,12 @@ def add_data(data_path: str, title: str, version: float, message: str) -> Tuple[
     Returns: Tuple[bool, str]: (success, message)
     """
     try:
+        if title is not None:
+            is_valid, result = validation.validate_dataset_name(title)
+            if not is_valid:
+                return False, f"Invalid dataset name: {result}"
+            title = result
+
         tracker_path = fu.find_data_tracker_root()
         if tracker_path is None:
             return False, "Data tracker is not initialized. Please run 'dt init' first."
@@ -61,6 +68,37 @@ def add_data(data_path: str, title: str, version: float, message: str) -> Tuple[
         return False, f"File operation failed: {e}"
     except ValueError as e:
         return False, str(e)
+
+def validate_dataset_name(name: str) -> Tuple[bool, str]:
+    """Validate a dataset name for use in DataTracker.
+    Rules:
+    - Cannot be empty or only whitespace
+    - Maximum length of 100 characters
+    - Cannot contain control characters (newlines, tabs, etc.)
+    - Automatically strips leading/trailing whitespace
+    - Can be None (which means auto-generate a name)
+    Returns:
+        Tuple[bool, str]: (is_valid, cleaned_name_or_error_message)
+    """
+    if name is None:
+        return True, None
+
+    cleaned = name.strip()
+
+    if not cleaned:
+        return False, "Dataset name cannot be empty or only whitespace"
+
+    if len(cleaned) > 100:
+        return False, f"Dataset name too long ({len(cleaned)} chars). Maximum is 100 characters"
+
+    if any(ord(c) < 32 and c not in '\t' for c in cleaned):
+        return False, "Dataset name cannot contain control characters (newlines, etc.)"
+
+    if cleaned.isdigit():
+        pass
+
+    return True, cleaned
+
 
 def _add_files_to_tracker(files: list[Tuple[str, str]], tracker_path: str,
                           data_path: str, dataset_id: int = None, title: str = None,

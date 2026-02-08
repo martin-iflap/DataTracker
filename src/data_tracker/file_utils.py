@@ -1,4 +1,5 @@
 import data_tracker.db_manager as db
+from colorama import Fore, init # init colorama in get_stats
 from typing import Tuple
 import subprocess
 import tempfile
@@ -312,3 +313,27 @@ def export_file(export_path: str, data_id: int, name: str,
         return False, f"Database error while exporting: {e}"
     except OSError as e:
         return False, f"Filesystem error while exporting: {e}"
+
+def get_storage_stats() -> Tuple[bool, str]:
+    """Get the number of files and the total size of all the objects"""
+    try:
+        tracker_path = find_data_tracker_root()
+        if tracker_path is None:
+            return False, "Data tracker is not initialized. Please run 'dt init' first."
+
+        objects_path = os.path.join(tracker_path, "objects")
+        total_files = 0
+        total_size = 0
+
+        init()
+
+        for root, dirs, files in os.walk(objects_path):
+            total_files += len(files)
+            for file in files:
+                file_path = os.path.join(root, file)
+                total_size += os.path.getsize(file_path)
+
+        return True, (f"Total number of files in data_tracker/objects directory: {Fore.YELLOW}{total_files}{Fore.RESET}, "
+                      f"Total size: {Fore.YELLOW}{format_size(total_size)}{Fore.RESET}")
+    except OSError as e:
+        return False, f"Filesystem error while calculating stats: {e}"
