@@ -254,3 +254,18 @@ def check_version_exists(conn: sqlite3.Connection, dataset_id: int, version: flo
         (dataset_id, version)
     )
     return cursor.fetchone() is not None
+
+def update_dataset_name(conn: sqlite3.Connection, dataset_id: int, new_name: str) -> None:
+    """Rename a dataset in the datasets table of the tracker.db database"""
+    conn.execute("UPDATE datasets SET name = ? WHERE id = ?", (new_name, dataset_id))
+
+def update_dataset_message(conn: sqlite3.Connection, dataset_id: int, version: float, new_message: str) -> int:
+    """Update the message of a specific version for a dataset in the versions table of the tracker.db database
+     - Return the number of rows updated (should be 1 if successful, 0 if no matching version found)
+    """
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE versions SET message = ? WHERE dataset_id = ? AND version = ?",
+        (new_message, dataset_id, version)
+    )
+    return cursor.rowcount

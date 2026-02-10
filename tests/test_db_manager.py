@@ -213,6 +213,37 @@ class TestDatasetOperations:
         found_id = db.find_dataset_by_path(in_memory_db_no_connection, dataset_path)
         assert found_id == dataset_id
 
+    def test_update_dataset_name(self, dataset_with_version_no_conn):
+        """Test renaming a dataset"""
+        dataset_id = dataset_with_version_no_conn['dataset_id']
+        db_path = dataset_with_version_no_conn['db_path']
+        new_name = "renamed-dataset"
+
+        with db.open_database(db_path) as conn:
+            db.update_dataset_name(conn, dataset_id, new_name)
+            conn.commit()
+
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM datasets WHERE id = ?", (dataset_id,))
+            row = cursor.fetchone()
+            assert row['name'] == new_name
+
+    def test_update_dataset_message_with_version(self, dataset_with_version_no_conn):
+        """Test updating a dataset's message"""
+        dataset_id = dataset_with_version_no_conn['dataset_id']
+        db_path = dataset_with_version_no_conn['db_path']
+        new_message = "Updated test notes"
+
+        with db.open_database(db_path) as conn:
+            rows_edited = db.update_dataset_message(conn, dataset_id, 1.0, new_message)
+            conn.commit()
+            assert rows_edited == 1
+
+            cursor = conn.cursor()
+            cursor.execute("SELECT message FROM versions WHERE dataset_id = ? AND version = ?", (dataset_id, 1.0))
+            row = cursor.fetchone()
+            assert row['message'] == new_message
+
 # --------------------------- OBJECT OPERATIONS --------------------------------
 
 class TestObjectOperations:

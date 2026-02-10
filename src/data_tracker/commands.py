@@ -1,6 +1,7 @@
-import data_tracker.commands_helper as helper
 import data_tracker.comparison as comparison
+import data_tracker.metadata as metadata
 import data_tracker.file_utils as fu
+import data_tracker.transform as tf
 import data_tracker.core as core
 import click
 import sys
@@ -192,13 +193,13 @@ def transform(image: str, input_data: str, output_data: str,
               no_track: bool, dataset_id: int, message: str, version: float) -> None:
     """Apply a transformation to the data using a containerized environment
      - check the environment, tracker initialization and options
-     - use the helper execute_transform function from commands_helper.py
+     - use the helper execute_transform function from transform.py
     """
     try:
         if auto_track and no_track:
             raise click.UsageError("Cannot use --auto-track and --no-track together")
 
-        success, result = helper.validate_transform_environment()
+        success, result = tf.validate_transform_environment()
         if not success:
             click.secho(result, fg="red")
             sys.exit(1)
@@ -208,16 +209,16 @@ def transform(image: str, input_data: str, output_data: str,
 
         if message:
             message = message.strip()
-        success, message, metadata = helper.execute_transform(
+        success, message, transform_metadata = tf.execute_transform(
             db_path, image, input_data, output_data, command,
             force, auto_track, no_track, dataset_id, message, version
         )
 
         if success:
             click.echo(message)
-            if metadata['tracked']:
+            if transform_metadata['tracked']:
                 click.secho(
-                    f"Versioned: {metadata['old_version']} → {metadata['new_version']}",
+                    f"Versioned: {transform_metadata['old_version']} → {transform_metadata['new_version']}",
                     fg="green"
                 )
         else:
@@ -243,13 +244,51 @@ def storage() -> None:
         click.secho(f"Error: {e}", fg="red", err=True)
         sys.exit(1)
 
+@click.command()
+@click.argument("new_name")
+@click.option("--id", required=False, type=int, help="ID of the dataset to rename")
+@click.option("-n", "--name", required=False, help="Old name of the dataset to rename")
+def rename(new_name: str, id: int, name: str) -> None:
+    """Rename a dataset specified by the dataset ID or name"""
+    if bool(id) == bool(name):
+        raise click.UsageError("Provide exactly one of --id or --name")
+    try:
+        success, message = metadata.rename_dataset(id, name, new_name)
+        if success:
+            click.echo(message)
+        else:
+            click.secho(message, fg="red")
+    except Exception as e:
+        click.secho(f"Error: {e}", fg="red", err=True)
+        sys.exit(1)
+
+@click.command()
+@click.argument("new_message")
+@click.option("--id", required=False, type=int, help="ID of the dataset to update message for")
+@click.option("-n", "--name", required=False, help="Name of the dataset to update message for")
+@click.option("-v", "--version", required=True, type=float, help="Version number to update message for")
+def annotate(new_message: str, id: int, name: str, version: float) -> None:
+    """Update the message for a specific dataset version
+    - specify dataset by id or name, version number and new message
+    """
+    if bool(id) == bool(name):
+        raise click.UsageError("Provide exactly one of --id or --name")
+    try:
+        success, message = metadata.change_message(new_message, id, name, version)
+        if success:
+            click.echo(message)
+        else:
+            click.secho(message, fg="red")
+    except Exception as e:
+        click.secho(f"Error: {e}", fg="red", err=True)
+        sys.exit(1)
 
 
-# create get_db_path function?
+
+
 # add presets for transform command?
+# refactor all the notes to messages
 # dataset renaming and note updates
-# validate name function
-# better transform error messages
 # dataset tagging (like git tags)
 # difference previewing before update command
 # batch file operations like export all
