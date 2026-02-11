@@ -29,7 +29,7 @@ def initialize_database(db_path: str) -> Tuple[bool, str]:
                          id INTEGER PRIMARY KEY AUTOINCREMENT,
                          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                          name TEXT UNIQUE,
-                         notes TEXT
+                         message TEXT
         )""")
         conn.execute("""
                      CREATE TABLE IF NOT EXISTS objects(
@@ -60,11 +60,11 @@ def initialize_database(db_path: str) -> Tuple[bool, str]:
         conn.commit()
     return True, "Data tracker initialized successfully"
 
-def insert_dataset(conn: sqlite3.Connection, name: str, notes: str) -> int:
+def insert_dataset(conn: sqlite3.Connection, name: str, message: str) -> int:
     """Insert a new dataset into the dataset table of the tracker.db database"""
     cursor = conn.cursor()
 
-    cursor.execute("INSERT INTO datasets (name, notes) VALUES (?, ?)", (name, notes))
+    cursor.execute("INSERT INTO datasets (name, message) VALUES (?, ?)", (name, message))
     id = cursor.lastrowid
 
     if name is None:
@@ -259,7 +259,7 @@ def update_dataset_name(conn: sqlite3.Connection, dataset_id: int, new_name: str
     """Rename a dataset in the datasets table of the tracker.db database"""
     conn.execute("UPDATE datasets SET name = ? WHERE id = ?", (new_name, dataset_id))
 
-def update_dataset_message(conn: sqlite3.Connection, dataset_id: int, version: float, new_message: str) -> int:
+def update_version_message(conn: sqlite3.Connection, dataset_id: int, version: float, new_message: str) -> int:
     """Update the message of a specific version for a dataset in the versions table of the tracker.db database
      - Return the number of rows updated (should be 1 if successful, 0 if no matching version found)
     """
@@ -267,5 +267,16 @@ def update_dataset_message(conn: sqlite3.Connection, dataset_id: int, version: f
     cursor.execute(
         "UPDATE versions SET message = ? WHERE dataset_id = ? AND version = ?",
         (new_message, dataset_id, version)
+    )
+    return cursor.rowcount
+
+def update_dataset_message(conn: sqlite3.Connection, dataset_id: int, new_message: str) -> int:
+    """Update the message of a dataset in the datasets table of the tracker.db database
+     - Return the number of rows updated (should be 1 if successful, 0 if no matching dataset found)
+    """
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE datasets SET message = ? WHERE id = ?",
+        (new_message, dataset_id)
     )
     return cursor.rowcount

@@ -266,15 +266,29 @@ def rename(new_name: str, id: int, name: str) -> None:
 @click.argument("new_message")
 @click.option("--id", required=False, type=int, help="ID of the dataset to update message for")
 @click.option("-n", "--name", required=False, help="Name of the dataset to update message for")
-@click.option("-v", "--version", required=True, type=float, help="Version number to update message for")
-def annotate(new_message: str, id: int, name: str, version: float) -> None:
+@click.option("-v", "--version", required=False, type=float, help="Version number to update message for")
+@click.option("--latest", is_flag=True, help="Update message for the latest version")
+@click.option("--dataset", is_flag=True, help="Update the dataset message")
+def annotate(new_message: str, id: int, name: str, version: float, latest: bool, dataset: bool) -> None:
     """Update the message for a specific dataset version
     - specify dataset by id or name, version number and new message
     """
     if bool(id) == bool(name):
         raise click.UsageError("Provide exactly one of --id or --name")
+
+    choices = [version is not None, latest, dataset]
+    if sum(choices) == 0:
+        raise click.UsageError("Specify target: --version X.X, --latest, or --dataset")
+    if sum(choices) > 1:
+        raise click.UsageError("Provide only one of --version, --latest, or --dataset")
+
     try:
-        success, message = metadata.change_message(new_message, id, name, version)
+        if dataset:
+            success, message = metadata.change_message(new_message, id, name, dataset=dataset)
+        else:
+            target_version = "latest" if latest else version
+            success, message = metadata.change_message(new_message, id, name,
+                                                       provided_version=target_version)
         if success:
             click.echo(message)
         else:
@@ -287,8 +301,6 @@ def annotate(new_message: str, id: int, name: str, version: float) -> None:
 
 
 # add presets for transform command?
-# refactor all the notes to messages
-# dataset renaming and note updates
 # dataset tagging (like git tags)
 # difference previewing before update command
 # batch file operations like export all

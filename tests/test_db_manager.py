@@ -46,7 +46,7 @@ def in_memory_db_no_connection(test_db_path) -> str:
 @pytest.fixture()
 def dataset_with_version(in_memory_db) -> dict:
     """Fixture providing a dataset with one version for testing with open connection"""
-    dataset_id = db.insert_dataset(in_memory_db, "test-dataset", "Test notes")
+    dataset_id = db.insert_dataset(in_memory_db, "test-dataset", "Test message")
     db.insert_object(in_memory_db, "abc123", 1000)
     version_id = db.insert_version(
         in_memory_db, dataset_id, "abc123", 1.0, "C:\\path\\to\\data", "Initial version"
@@ -65,7 +65,7 @@ def dataset_with_version_no_conn(in_memory_db_no_connection) -> dict:
      - useful for testing functions that open their own connections
     """
     with db.open_database(in_memory_db_no_connection) as conn:
-        dataset_id = db.insert_dataset(conn, "test-dataset", "Test notes")
+        dataset_id = db.insert_dataset(conn, "test-dataset", "Test message")
         db.insert_object(conn, "abc123", 1000)
         version_id = db.insert_version(
             conn, dataset_id, "abc123", 1.0, "C:\\path\\to\\data", "Initial version"
@@ -120,20 +120,20 @@ class TestDatasetOperations:
 
     def test_insert_dataset_with_name(self, in_memory_db):
         """Test inserting a dataset with explicit name"""
-        dataset_id = db.insert_dataset(in_memory_db, "test-dataset", "Test notes")
+        dataset_id = db.insert_dataset(in_memory_db, "test-dataset", "Test message")
 
         assert isinstance(dataset_id, int)
         assert dataset_id == 1
 
         cursor = in_memory_db.cursor()
-        cursor.execute("SELECT name, notes FROM datasets WHERE id = ?", (dataset_id,))
+        cursor.execute("SELECT name, message FROM datasets WHERE id = ?", (dataset_id,))
         row = cursor.fetchone()
         assert row['name'] == "test-dataset"
-        assert row['notes'] == "Test notes"
+        assert row['message'] == "Test message"
 
     def test_insert_dataset_without_name(self, in_memory_db):
         """Test inserting a dataset with auto-generated name"""
-        dataset_id = db.insert_dataset(in_memory_db, None, "Test notes")
+        dataset_id = db.insert_dataset(in_memory_db, None, "Test message")
 
         cursor = in_memory_db.cursor()
         cursor.execute("SELECT name FROM datasets WHERE id = ?", (dataset_id,))
@@ -228,19 +228,35 @@ class TestDatasetOperations:
             row = cursor.fetchone()
             assert row['name'] == new_name
 
-    def test_update_dataset_message_with_version(self, dataset_with_version_no_conn):
-        """Test updating a dataset's message"""
+    def test_update_version_message(self, dataset_with_version_no_conn):
+        """Test updating a version's message"""
         dataset_id = dataset_with_version_no_conn['dataset_id']
         db_path = dataset_with_version_no_conn['db_path']
-        new_message = "Updated test notes"
+        new_message = "Updated test message"
 
         with db.open_database(db_path) as conn:
-            rows_edited = db.update_dataset_message(conn, dataset_id, 1.0, new_message)
+            rows_edited = db.update_version_message(conn, dataset_id, 1.0, new_message)
             conn.commit()
             assert rows_edited == 1
 
             cursor = conn.cursor()
             cursor.execute("SELECT message FROM versions WHERE dataset_id = ? AND version = ?", (dataset_id, 1.0))
+            row = cursor.fetchone()
+            assert row['message'] == new_message
+
+    def test_update_dataset_message(self, dataset_with_version_no_conn):
+        """Test updating a version's message using 'latest' flag to specify version"""
+        dataset_id = dataset_with_version_no_conn['dataset_id']
+        db_path = dataset_with_version_no_conn['db_path']
+        new_message = "Updated dataset message"
+
+        with db.open_database(db_path) as conn:
+            rows_edited = db.update_dataset_message(conn, dataset_id, new_message)
+            conn.commit()
+            assert rows_edited == 1
+
+            cursor = conn.cursor()
+            cursor.execute("SELECT message FROM datasets WHERE id = ?", (dataset_id,))
             row = cursor.fetchone()
             assert row['message'] == new_message
 
