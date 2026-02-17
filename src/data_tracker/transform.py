@@ -1,25 +1,44 @@
-"""Business logic for CLI commands - keeps commands.py thin"""
+"""Business logic for transform command - keeps commands.py thin"""
 import data_tracker.docker_manager as docker_m
+import data_tracker.transform_preset as tp
 import data_tracker.file_utils as fu
 import data_tracker.db_manager as db
+from typing import Tuple, Optional
 import data_tracker.core as core
-from typing import Tuple
 import os
 
 def execute_transform(
     db_path: str,
-    image: str,
-    input_data: str,
-    output_data: str,
-    command: str,
-    force: bool,
-    auto_track: bool,
-    no_track: bool,
-    dataset_id: int,
-    message: str,
-    version: float
+    tracker_path: str,
+    preset_name: Optional[str],
+    image: Optional[str],
+    input_data: Optional[str],
+    output_data: Optional[str],
+    command: Optional[str],
+    force: Optional[bool],
+    auto_track: Optional[bool],
+    no_track: Optional[bool],
+    dataset_id: Optional[int],
+    message: Optional[str],
+    version: Optional[float]
 ) -> Tuple[bool, str, dict]:
     """Execute transformation with auto-versioning logic.
+
+    Args:
+        db_path: Path to tracker database
+        tracker_path: Path to .data_tracker directory
+        preset_name: Name of preset to use (if any)
+        image: Docker image (CLI overrides preset)
+        input_data: Input path (CLI overrides preset)
+        output_data: Output path (CLI overrides preset)
+        command: Transform command (CLI overrides preset)
+        force: Force flag (CLI overrides preset)
+        auto_track: Auto-track flag (CLI overrides preset)
+        no_track: No-track flag (CLI overrides preset)
+        dataset_id: Dataset ID for explicit tracking
+        message: Custom message (CLI overrides preset)
+        version: Custom version number
+
     Returns: (success, message, metadata_dict)
     metadata_dict contains:
         - dataset_name: str | None
@@ -35,6 +54,49 @@ def execute_transform(
         'new_version': None,
         'tracked': False
     }
+
+    # Load preset and apply override hierarchy: CLI > preset > defaults
+    if preset_name:
+        try:
+            preset_data = tp.get_preset(tracker_path, preset_name)
+
+            # Apply overrides: CLI values take precedence over preset values
+            image = image if image is not None else preset_data.get('image')
+            command = command if command is not None else preset_data.get('command')
+
+            # For boolean flags, only override if explicitly set by user (not None)
+            if force is None:
+                force = preset_data.get('force', False)
+            if auto_track is None:
+                auto_track = preset_data.get('auto_track', False)
+            if no_track is None:
+                no_track = preset_data.get('no_track', False)
+
+            if message is None: # override message if provided by CLI
+                message = preset_data.get('message')
+
+            # Validate that required fields are now populated
+            if not all([image, input_data, output_data, command]):
+                missing = []
+                if not image: missing.append('image')
+                if not input_data: missing.append('input-data')
+                if not output_data: missing.append('output-data')
+                if not command: missing.append('command')
+                return False, (
+                    f"Preset '{preset_name}' is missing required fields: {', '.join(missing)}\n"
+                    f"Provide these via CLI options or update the preset configuration."
+                ), metadata
+
+        except ValueError as e:
+            return False, str(e), metadata
+        except Exception as e:
+            return False, f"Failed to load preset '{preset_name}': {e}", metadata
+    else:
+        # No preset - use CLI values or defaults
+        force = force if force is not None else False
+        auto_track = auto_track if auto_track is not None else False
+        no_track = no_track if no_track is not None else False
+
     try:
         if dataset_id:
             found_dataset_id = dataset_id

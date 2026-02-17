@@ -1,4 +1,4 @@
-import data_tracker.validation as validation
+import data_tracker.transform_preset as tp
 import data_tracker.db_manager as db
 import data_tracker.file_utils as fu
 from typing import Tuple
@@ -17,8 +17,10 @@ def initialize_tracker() -> Tuple[bool, str]:
     tracker_path = os.path.join(os.getcwd(), ".data_tracker")
     try:
         os.makedirs(os.path.join(tracker_path, "objects"))
-        db_path = os.path.join(tracker_path, "tracker.db")
 
+        tp.init_preset(tracker_path)
+
+        db_path = os.path.join(tracker_path, "tracker.db")
         success, message = db.initialize_database(db_path)
         return success, message
     except sqlite3.Error as e:
@@ -98,7 +100,6 @@ def validate_dataset_name(name: str) -> Tuple[bool, str]:
         pass
 
     return True, cleaned
-
 
 def _add_files_to_tracker(files: list[Tuple[str, str]], tracker_path: str,
                           data_path: str, dataset_id: int = None, title: str = None,
@@ -185,7 +186,7 @@ def list_data(struct: bool) -> Tuple[bool, str]:
         for dataset in all_datasets:
             dataset_id = dataset['id']
             output_lines.append(f"ID: {dataset_id},  Name: {dataset['name']},  "
-                                f"Created At: {dataset['created_at']},  Notes: {dataset['notes']}")
+                                f"Created At: {dataset['created_at']},  Message: {dataset['message']}")
             if struct:
                 structure = fu.display_structure(db_path, dataset_id)
                 output_lines.append(structure)

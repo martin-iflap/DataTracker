@@ -169,18 +169,19 @@ def export(export_path: str, id: int, name: str,
         sys.exit(1)
 
 @click.command()
-@click.option("-i", "--image", required=True, help="Path to the image")
-@click.option("-in", "--input-data", required=True,
-              help="Path to the input data")
-@click.option("-out", "--output-data", required=True,
-              help="Path to the output data")
-@click.option("-c", "--command", required=True,
-              help="Transformation command to apply use mounted /input and /output")
-@click.option("-f", "--force", is_flag=True, default=False,
+@click.option("-p", "--preset", default=None, help="Use a named transform preset")
+@click.option("-i", "--image", default=None, help="Docker image (overrides preset)")
+@click.option("-in", "--input-data", default=None,
+              help="Path to the input data (overrides preset)")
+@click.option("-out", "--output-data", default=None,
+              help="Path to the output data (overrides preset)")
+@click.option("-c", "--command", default=None,
+              help="Transformation command (overrides preset)")
+@click.option("-f", "--force", is_flag=True, default=None,
               help="Force execution without command validation")
-@click.option("--auto-track", is_flag=True, default=False,
+@click.option("--auto-track", is_flag=True, default=None,
               help="Auto-add input if not tracked, then version output")
-@click.option("--no-track", is_flag=True, default=False,
+@click.option("--no-track", is_flag=True, default=None,
               help="Skip versioning even if input is tracked")
 @click.option("-id", "--dataset-id", type=int, default=None,
               help="Explicitly specify which dataset to update (advanced)")
@@ -188,12 +189,12 @@ def export(export_path: str, id: int, name: str,
               help="Manually specify version number for auto-versioning (advanced)")
 @click.option("-m", "--message", default=None,
               help="Custom message for auto-versioned output")
-def transform(image: str, input_data: str, output_data: str,
+def transform(preset: str, image: str, input_data: str, output_data: str,
               command: str, force: bool, auto_track: bool,
               no_track: bool, dataset_id: int, message: str, version: float) -> None:
     """Apply a transformation to the data using a containerized environment
-     - check the environment, tracker initialization and options
-     - use the helper execute_transform function from transform.py
+     - Can use presets for common transformations or specify all options manually.
+     - CLI options override preset values when both are provided.
     """
     try:
         if auto_track and no_track:
@@ -207,10 +208,26 @@ def transform(image: str, input_data: str, output_data: str,
         tracker_path = result
         db_path = os.path.join(tracker_path, "tracker.db")
 
+        if preset: # validate preset existence if specified
+            import data_tracker.transform_preset as tp               # import here?
+            if not tp.preset_exists(tracker_path, preset):
+                click.secho(f"Error: Preset '{preset}' not found", fg="red")
+                click.secho("Run 'dt preset list' to see available presets (coming soon)", fg="yellow")
+                sys.exit(1)
+
+        if not preset:
+            if not all([image, input_data, output_data, command]): # validate all required options are provided
+                raise click.UsageError(
+                    "When not using --preset, all of the following are required:\n"
+                    "  --image, --input-data, --output-data, --command"
+                )
+
         if message:
             message = message.strip()
+
+        # execute the transformation with all the arguments
         success, message, transform_metadata = tf.execute_transform(
-            db_path, image, input_data, output_data, command,
+            db_path, tracker_path, preset, image, input_data, output_data, command,
             force, auto_track, no_track, dataset_id, message, version
         )
 
@@ -300,9 +317,18 @@ def annotate(new_message: str, id: int, name: str, version: float, latest: bool,
 
 
 
-# add presets for transform command?
+# add presets for transform command? <-
 # dataset tagging (like git tags)
 # difference previewing before update command
 # batch file operations like export all
-# config file?
 # tests
+
+
+# create the transform preset JSON file in init
+# create a new file to fetch info from it.
+# use it in the transform command to get what is in there and use it, if an info is missing alert
+# if user specifies something different from the preset use cli as default
+# presets should have names so user can have multiple, preset name is required when using presets
+# probably use name as key and have all the infos in the value, for better fetching and readability
+# possibly commands to manage presets like add/remove/list
+# keep an eye on the relative paths
