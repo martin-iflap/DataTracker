@@ -17,6 +17,11 @@ def test_compare_with_invalid_version(tmp_path):
     assert success is False
     assert "No files found" in message or "invalid" in message.lower()
 
+    try:
+        shutil.rmtree(str(db_path), ignore_errors=True)
+    except:
+        raise
+
 def test_compare_identical_files(tmp_path):
     """Test the compare_files function with two identical text files
      - similarity should be 100%, added and removed lines should be 0
