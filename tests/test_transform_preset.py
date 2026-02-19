@@ -88,6 +88,18 @@ def preset_exists_with_malformed_file(tmp_path):
     except:
         raise
 
+def test_preset_exists_with_missing_file(tmp_path):
+    """Test that preset_exists returns False when the preset configuration file is missing."""
+    fake_tracker_path = tmp_path / ".data_tracker"
+    fake_tracker_path.mkdir()
+
+    assert preset.preset_exists(fake_tracker_path, "example-python") is False, "preset_exists should return False when config file is missing."
+
+    try:
+        shutil.rmtree(str(fake_tracker_path), ignore_errors=True)
+    except:
+        raise
+
 def test_get_preset(tmp_path):
     """Test that the get_preset function retrieves the correct preset configuration."""
     fake_tracker_path = tmp_path / ".data_tracker"

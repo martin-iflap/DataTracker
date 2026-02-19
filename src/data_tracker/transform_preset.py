@@ -13,7 +13,8 @@ def init_preset(tracker_path: str) -> None:
                 "image": "python:3.11-slim",
                 "command": "python /input/script.py --output /output/result.csv",
                 "auto_track": True,
-                "message": "Example python transformation"
+                "message": "Example python transformation",
+                "force": False,
             }
         },
         "schema_version": "1.0"

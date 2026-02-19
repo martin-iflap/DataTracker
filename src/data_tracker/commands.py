@@ -317,18 +317,12 @@ def annotate(new_message: str, id: int, name: str, version: float, latest: bool,
 
 
 
-# add presets for transform command? <-
 # dataset tagging (like git tags)
 # difference previewing before update command
 # batch file operations like export all
 # tests
 
 
-# create the transform preset JSON file in init
-# create a new file to fetch info from it.
-# use it in the transform command to get what is in there and use it, if an info is missing alert
 # if user specifies something different from the preset use cli as default
-# presets should have names so user can have multiple, preset name is required when using presets
-# probably use name as key and have all the infos in the value, for better fetching and readability
-# possibly commands to manage presets like add/remove/list
+# commands to manage presets like add/remove/list
 # keep an eye on the relative paths
