@@ -39,7 +39,7 @@ def add_data(data_path: str, title: str, version: float, message: str) -> Tuple[
     """
     try:
         if title is not None:
-            is_valid, result = validation.validate_dataset_name(title)
+            is_valid, result = validate_dataset_name(title)
             if not is_valid:
                 return False, f"Invalid dataset name: {result}"
             title = result

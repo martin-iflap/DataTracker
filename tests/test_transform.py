@@ -1,34 +1,12 @@
-import data_tracker.transform_preset as tp
 import data_tracker.db_manager as db
 import data_tracker.transform as tf
 import data_tracker.core as core
 from unittest.mock import patch
-import tempfile
 import shutil
 import pytest
 import os
 
 
-@pytest.fixture
-def temp_tracker_dir():
-    """Create a temporary .data_tracker directory with all required structure"""
-    temp_dir = tempfile.mkdtemp()
-    tracker_path = os.path.join(temp_dir, ".data_tracker")
-    os.makedirs(os.path.join(tracker_path, "objects"))
-
-    db_path = os.path.join(tracker_path, "tracker.db")
-    success, msg = db.initialize_database(db_path)
-    assert success, f"Failed to init DB: {msg}"
-
-    tp.init_preset(tracker_path)
-
-    yield {
-        'tracker_path': tracker_path,
-        'db_path': db_path,
-        'temp_dir': temp_dir
-    }
-
-    shutil.rmtree(temp_dir, ignore_errors=True)
 
 @pytest.fixture
 def mock_docker_transform():
@@ -76,19 +54,6 @@ def test_output_dir(temp_tracker_dir):
     except (OSError, PermissionError):
         pass
 
-@pytest.fixture
-def mock_tracker_root(temp_tracker_dir, monkeypatch):
-    """Mock find_data_tracker_root to return the temp tracker path.
-
-    This is needed for tests that use auto_track or any functionality
-    that calls core.add_data/update_data, since those functions use
-    find_data_tracker_root() to locate the tracker directory.
-    """
-    tracker_path = temp_tracker_dir['tracker_path']
-    monkeypatch.setattr('data_tracker.file_utils.find_data_tracker_root',
-                       lambda: tracker_path)
-    return tracker_path
-
 # ---------------------------    TESTS    ------------------------------
 
 class TestValidateTransformEnvironment:
@@ -125,21 +90,15 @@ class TestValidateTransformEnvironment:
         assert tracker_path == temp_tracker_dir['tracker_path']
 
 
-
 class TestExecuteTransform:
     """Test the execute transform function"""
 
     def test_execute_transform_with_preset_basic(self, temp_tracker_dir,
                                                  mock_docker_transform,
-                                                 test_input_file, test_output_dir,
-                                                 mock_tracker_root,
-                                                 monkeypatch):
+                                                 test_input_file, test_output_dir):
         """Test transform uses preset values when provided"""
         db_path = temp_tracker_dir['db_path']
         tracker_path = temp_tracker_dir['tracker_path']
-
-        monkeypatch.setattr('data_tracker.file_utils.find_data_tracker_root',
-                           lambda: tracker_path)
 
         success, message, metadata = tf.execute_transform(
             db_path=db_path,
@@ -200,16 +159,12 @@ class TestExecuteTransform:
         assert "image" in message
 
     def test_execute_transform_auto_track_adds_input(self, temp_tracker_dir, mock_docker_transform,
-                                                     test_input_file, test_output_dir, monkeypatch):
+                                                     test_input_file, test_output_dir):
         """Test --auto-track adds input as new dataset
          - verify dataset is not tracked initially and is tracked after transform
         """
         db_path = temp_tracker_dir['db_path']
         tracker_path = temp_tracker_dir['tracker_path']
-
-        monkeypatch.setattr('data_tracker.file_utils.find_data_tracker_root',
-                            lambda: tracker_path)
-
 
         dataset_id = db.find_dataset_by_path(db_path, test_input_file)
         assert dataset_id is None
@@ -267,7 +222,7 @@ class TestExecuteTransform:
         assert "Versioning disabled" in message
 
     def test_execute_transform_tracked_input_versions_output(self, temp_tracker_dir, mock_docker_transform,
-                                                             test_input_file, test_output_dir, monkeypatch):
+                                                             test_input_file, test_output_dir):
         """Test tracked input automatically versions output
          - Add input as tracked dataset
          - Create output file to simulate transform result
@@ -276,9 +231,6 @@ class TestExecuteTransform:
         """
         db_path = temp_tracker_dir['db_path']
         tracker_path = temp_tracker_dir['tracker_path']
-
-        monkeypatch.setattr('data_tracker.file_utils.find_data_tracker_root',
-                            lambda: tracker_path)
 
         success, msg = core.add_data(test_input_file, title="test-dataset",
                                      version=1.0, message="Initial")
@@ -311,17 +263,13 @@ class TestExecuteTransform:
         assert "Updated 'test-dataset' to version 1.1" in message
 
     def test_execute_transform_docker_failure_rolls_back_auto_add(self, temp_tracker_dir,
-                                                                  test_input_file, test_output_dir,
-                                                                  monkeypatch):
+                                                                  test_input_file, test_output_dir):
         """Test rollback when Docker fails after auto-adding input
          - Run transform with auto_track=True and mock Docker to fail
          - Verify transform fails with appropriate message and input dataset is not left in database
         """
         db_path = temp_tracker_dir['db_path']
         tracker_path = temp_tracker_dir['tracker_path']
-
-        monkeypatch.setattr('data_tracker.file_utils.find_data_tracker_root',
-                           lambda: tracker_path)
 
         with patch('data_tracker.docker_manager.transform_data') as mock_docker:
             mock_docker.return_value = (False, "Docker container failed")
@@ -349,4 +297,150 @@ class TestExecuteTransform:
         dataset_id = db.find_dataset_by_path(db_path, test_input_file)
         assert dataset_id is None  # Should be rolled back
 
+    def test_execute_transform_custom_version_number(self, temp_tracker_dir, mock_docker_transform,
+                                                     test_input_file, test_output_dir):
+        """Test specifying custom version number
+         - Add input as tracked dataset with version 1.0
+         - Create output file to simulate transform result
+         - Run transform with version=2.0
+         - Verify output is tracked with version 2.0 and message indicates update to specified version
+        """
+        db_path = temp_tracker_dir['db_path']
+        tracker_path = temp_tracker_dir['tracker_path']
 
+        core.add_data(test_input_file, title="test-dataset", version=1.0, message="Initial")
+
+        output_file = os.path.join(test_output_dir, "result.csv")
+        with open(output_file, 'w') as f:
+            f.write("result\n")
+
+        success, message, metadata = tf.execute_transform(
+            db_path=db_path,
+            tracker_path=tracker_path,
+            preset_name=None,
+            image="python:3.11",
+            input_data=test_input_file,
+            output_data=test_output_dir,
+            command="echo 'test'",
+            force=True,
+            auto_track=False,
+            no_track=False,
+            dataset_id=None,
+            message=None,
+            version=2.0  # Custom version
+        )
+
+        assert success is True
+        assert metadata['new_version'] == 2.0
+
+    def test_execute_transform_duplicate_version_fails(self, temp_tracker_dir, mock_docker_transform,
+                                                       test_input_file, test_output_dir):
+        """Test error when specifying existing version number
+         - Add input as tracked dataset with version 1.0
+         - Run transform with version = 1.0 again
+         - Verify transform succeeds but versioning is skipped with correct message
+        """
+        db_path = temp_tracker_dir['db_path']
+        tracker_path = temp_tracker_dir['tracker_path']
+
+        core.add_data(test_input_file, title="test-dataset", version=1.0, message="Initial")
+
+        success, message, metadata = tf.execute_transform(
+            db_path=db_path,
+            tracker_path=tracker_path,
+            preset_name=None,
+            image="python:3.11",
+            input_data=test_input_file,
+            output_data=test_output_dir,
+            command="echo 'test'",
+            force=True,
+            auto_track=False,
+            no_track=False,
+            dataset_id=None,
+            message=None,
+            version=1.0  # Duplicate version
+        )
+
+        assert success is True
+        assert metadata['tracked'] is False
+        assert "not valid" in message or "already exists" in message.lower()
+
+    def test_execute_transform_invalid_dataset_id(self, temp_tracker_dir, test_input_file, test_output_dir):
+        """Test error with non-existent dataset ID"""
+        db_path = temp_tracker_dir['db_path']
+        tracker_path = temp_tracker_dir['tracker_path']
+
+        success, message, metadata = tf.execute_transform(
+            db_path=db_path,
+            tracker_path=tracker_path,
+            preset_name=None,
+            image="python:3.11",
+            input_data=test_input_file,
+            output_data=test_output_dir,
+            command="echo 'test'",
+            force=True,
+            auto_track=False,
+            no_track=False,
+            dataset_id=999,  # Non-existent ID
+            message=None,
+            version=None
+        )
+
+        assert success is False
+        assert "does not exist" in message
+
+    def test_execute_transform_invalid_preset_name(self, temp_tracker_dir, test_input_file, test_output_dir):
+        """Test error with non-existent preset"""
+        db_path = temp_tracker_dir['db_path']
+        tracker_path = temp_tracker_dir['tracker_path']
+
+        success, message, metadata = tf.execute_transform(
+            db_path=db_path,
+            tracker_path=tracker_path,
+            preset_name="nonexistent-preset",
+            image=None,
+            input_data=test_input_file,
+            output_data=test_output_dir,
+            command=None,
+            force=None,
+            auto_track=None,
+            no_track=None,
+            dataset_id=None,
+            message=None,
+            version=None
+        )
+
+        assert success is False
+        assert "not found" in message.lower()
+
+    def test_execute_transform_get_dataset_name_by_id_fails(self, temp_tracker_dir, test_input_file,
+                                                            test_output_dir, monkeypatch):
+        """Check message when get dataset name by ID fails
+         - Mock find_dataset_by_id to return None to simulate failure
+        """
+        db_path = temp_tracker_dir['db_path']
+        tracker_path = temp_tracker_dir['tracker_path']
+
+        # core.add_data(test_input_file, title="test-dataset", version=1.0, message="Initial")
+
+        monkeypatch.setattr('data_tracker.db_manager.get_dataset_name_from_id',
+                            lambda path, dataset_id: None)
+
+        success, message, metadata = tf.execute_transform(
+            db_path=db_path,
+            tracker_path=tracker_path,
+            preset_name=None,
+            image="python:3.11",
+            input_data=test_input_file,
+            output_data=test_output_dir,
+            command="echo 'test'",
+            force=True,
+            auto_track=False,
+            no_track=False,
+            dataset_id=1,
+            message=None,
+            version=None
+        )
+
+        assert success is False
+        assert "Dataset with ID 1 does not exist" in message
