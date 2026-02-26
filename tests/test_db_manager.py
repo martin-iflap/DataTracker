@@ -1,27 +1,17 @@
 from data_tracker import db_manager as db
 import tracemalloc
-import tempfile
 import pytest
-import shutil
 import os
 
 
 tracemalloc.start()
 
 @pytest.fixture()
-def temp_db_dir():
-    """Create temporary directory for database files"""
-    temp_dir = tempfile.mkdtemp()
-    yield temp_dir
-    try:
-        shutil.rmtree(temp_dir, ignore_errors=True)
-    except:
-        raise
-
-@pytest.fixture()
-def test_db_path(temp_db_dir) -> str:
-    """Provide a temporary database file path"""
-    db_path = os.path.join(temp_db_dir, "test_db")
+def test_db_path(temp_dir) -> str:
+    """Provide a temporary database file path
+    Note: Uses temp_dir fixture from conftest.py for automatic cleanup
+    """
+    db_path = os.path.join(temp_dir, "test_db")
     return db_path
 
 @pytest.fixture()

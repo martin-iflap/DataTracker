@@ -33,3 +33,11 @@ def temp_tracker_dir(monkeypatch):
     }
 
     shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@pytest.fixture
+def temp_dir():
+    """Create a temporary directory that auto-deletes after test."""
+    path = tempfile.mkdtemp()
+    yield path
+    shutil.rmtree(path, ignore_errors=True)
