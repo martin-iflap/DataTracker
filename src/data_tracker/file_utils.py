@@ -38,7 +38,7 @@ def copy_file_to_objects(tracker_path: str, data_path: str, file_hash: str) -> N
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         shutil.copy2(data_path, save_path)
     else:
-        raise OSError("Directory handling not implemented yet") # remove this check?
+        raise OSError("Directory handling not implemented yet")
 
 def hash_file(file_path: str) -> str | None:
     """Compute the hash of a file for versioning using SHA256"""

@@ -1,4 +1,5 @@
 import data_tracker.comparison as comparison
+import data_tracker.transform_preset as tp
 import data_tracker.metadata as metadata
 import data_tracker.file_utils as fu
 import data_tracker.transform as tf
@@ -171,17 +172,17 @@ def export(export_path: str, id: int, name: str,
 @click.command()
 @click.option("-p", "--preset", default=None, help="Use a named transform preset")
 @click.option("-i", "--image", default=None, help="Docker image (overrides preset)")
-@click.option("-in", "--input-data", default=None,
-              help="Path to the input data (overrides preset)")
-@click.option("-out", "--output-data", default=None,
-              help="Path to the output data (overrides preset)")
+@click.option("-in", "--input-data", required=True,
+              help="Path to the input data")
+@click.option("-out", "--output-data", required=True,
+              help="Path to the output data")
 @click.option("-c", "--command", default=None,
               help="Transformation command (overrides preset)")
-@click.option("-f", "--force", is_flag=True, default=None,
+@click.option("-f", "--force", is_flag=True, default=False,
               help="Force execution without command validation")
-@click.option("--auto-track", is_flag=True, default=None,
+@click.option("--auto-track", is_flag=True, default=False,
               help="Auto-add input if not tracked, then version output")
-@click.option("--no-track", is_flag=True, default=None,
+@click.option("--no-track", is_flag=True, default=False,
               help="Skip versioning even if input is tracked")
 @click.option("-id", "--dataset-id", type=int, default=None,
               help="Explicitly specify which dataset to update (advanced)")
@@ -208,18 +209,17 @@ def transform(preset: str, image: str, input_data: str, output_data: str,
         tracker_path = result
         db_path = os.path.join(tracker_path, "tracker.db")
 
-        if preset: # validate preset existence if specified
-            import data_tracker.transform_preset as tp               # import here?
+        if preset:
             if not tp.preset_exists(tracker_path, preset):
                 click.secho(f"Error: Preset '{preset}' not found", fg="red")
                 click.secho("Run 'dt preset list' to see available presets (coming soon)", fg="yellow")
                 sys.exit(1)
 
         if not preset:
-            if not all([image, input_data, output_data, command]): # validate all required options are provided
+            if not all([image, command]):
                 raise click.UsageError(
                     "When not using --preset, all of the following are required:\n"
-                    "  --image, --input-data, --output-data, --command"
+                    "  --image, --command"
                 )
 
         if message:
@@ -317,12 +317,3 @@ def annotate(new_message: str, id: int, name: str, version: float, latest: bool,
 
 
 
-# dataset tagging (like git tags)
-# difference previewing before update command
-# batch file operations like export all
-# tests
-
-
-# if user specifies something different from the preset use cli as default
-# commands to manage presets like add/remove/list
-# keep an eye on the relative paths

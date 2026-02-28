@@ -421,8 +421,6 @@ class TestExecuteTransform:
         db_path = temp_tracker_dir['db_path']
         tracker_path = temp_tracker_dir['tracker_path']
 
-        # core.add_data(test_input_file, title="test-dataset", version=1.0, message="Initial")
-
         monkeypatch.setattr('data_tracker.db_manager.get_dataset_name_from_id',
                             lambda path, dataset_id: None)
 
@@ -444,3 +442,53 @@ class TestExecuteTransform:
 
         assert success is False
         assert "Dataset with ID 1 does not exist" in message
+
+    def test_execute_transform_relative_path_resolves_tracked_dataset(
+            self, temp_tracker_dir, mock_docker_transform, test_output_dir):
+        """Test that a relative input path is resolved to absolute before the DB lookup.
+        - Change cwd to temp_dir so "input.csv" resolves to the same absolute path
+          that core.add_data records in the DB.
+        - Pass only the filename (relative) as input_data and verify the dataset is found.
+        - Finally restore the original cwd to avoid side effects on other tests.
+        """
+        db_path = temp_tracker_dir['db_path']
+        tracker_path = temp_tracker_dir['tracker_path']
+        temp_dir = temp_tracker_dir['temp_dir']
+
+        input_path = os.path.join(temp_dir, "input.csv")
+        with open(input_path, 'w') as f:
+            f.write("col1,col2\n1,2\n")
+
+        output_file = os.path.join(test_output_dir, "result.csv")
+        with open(output_file, 'w') as f:
+            f.write("result\n")
+
+        # Add the dataset using the absolute path, as dt add would normally do
+        success, msg = core.add_data(input_path, title="relative-test", version=1.0, message="initial")
+        assert success, msg
+
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(temp_dir) # change cwd to temp_dir
+
+            success, message, metadata = tf.execute_transform(
+                db_path=db_path,
+                tracker_path=tracker_path,
+                preset_name=None,
+                image="python:3.11",
+                input_data="input.csv",     # relative path
+                output_data=test_output_dir,
+                command="echo 'test'",
+                force=True,
+                auto_track=False,
+                no_track=False,
+                dataset_id=None,
+                message=None,
+                version=None
+            )
+        finally:
+            os.chdir(original_cwd)  # always restore cwd
+
+        assert success is True
+        assert metadata['tracked'] is True
+        assert metadata['dataset_name'] == "relative-test"

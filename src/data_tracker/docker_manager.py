@@ -43,8 +43,8 @@ def transform_data(image: str, input_data: str, output_data: str,
 
         docker_command = [
             'docker', 'run', '--rm',
-            '-v', f'{input_data}:/input:ro',
-            '-v', f'{output_data}:/output',
+            '-v', f'{input_abs}:/input:ro',
+            '-v', f'{output_abs}:/output',
             image,
             '/bin/sh', '-c', command
         ]

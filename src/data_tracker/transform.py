@@ -12,12 +12,12 @@ def execute_transform(
     tracker_path: str,
     preset_name: Optional[str],
     image: Optional[str],
-    input_data: Optional[str],
-    output_data: Optional[str],
+    input_data: str,
+    output_data: str,
     command: Optional[str],
-    force: Optional[bool],
-    auto_track: Optional[bool],
-    no_track: Optional[bool],
+    force: bool,
+    auto_track: bool,
+    no_track: bool,
     dataset_id: Optional[int],
     message: Optional[str],
     version: Optional[float]
@@ -61,18 +61,18 @@ def execute_transform(
             preset_data = tp.get_preset(tracker_path, preset_name)
 
             # Apply overrides: CLI values take precedence over preset values
-            image = image if image is not None else preset_data.get('image')
-            command = command if command is not None else preset_data.get('command')
+            image = image if image is not None else preset_data.get('image', False)
+            command = command if command is not None else preset_data.get('command', False)
 
-            # For boolean flags, only override if explicitly set by user (not None)
-            if force is None:
+            # For boolean flags, only override with preset if CLI left the default False
+            if not force:
                 force = preset_data.get('force', False)
-            if auto_track is None:
+            if not auto_track:
                 auto_track = preset_data.get('auto_track', False)
-            if no_track is None:
+            if not no_track:
                 no_track = preset_data.get('no_track', False)
 
-            if message is None: # override message if provided by CLI
+            if message is None:
                 message = preset_data.get('message')
 
             # Validate that required fields are now populated
@@ -91,14 +91,13 @@ def execute_transform(
             return False, str(e), metadata
         except Exception as e:
             return False, f"Failed to load preset '{preset_name}': {e}", metadata
-    else:
-        # No preset - use CLI values or defaults
-        force = force if force is not None else False
-        auto_track = auto_track if auto_track is not None else False
-        no_track = no_track if no_track is not None else False
+
+    # Resolve paths to absolute so DB lookups and Docker mounts are always consistent
+    input_data = os.path.abspath(input_data)
+    output_data = os.path.abspath(output_data)
 
     try:
-        if dataset_id:
+        if dataset_id is not None:
             found_dataset_id = dataset_id
             dataset_name = db.get_dataset_name_from_id(db_path, dataset_id)
             if not dataset_name:
@@ -155,7 +154,7 @@ def execute_transform(
                 f"Your database may be corrupted. Run:\n"
                 f"  dt ls  # Check for orphaned dataset\n"
                 f"  dt remove --id <ID>  # Remove it if found\n"
-                f"Input path: {os.path.abspath(input_data)}"
+                f"Input path: {input_data}"
             ), metadata
 
     success, transform_msg = docker_m.transform_data( # run transformation
@@ -178,13 +177,13 @@ def execute_transform(
         try:
             with db.open_database(db_path) as conn:
                 latest_version = db.get_latest_version(conn, found_dataset_id)
-                if version:
+                if version is not None:
                     if not db.check_version_exists(conn, found_dataset_id, version):
                         new_version = version
                     else:
                         status_msg += (f"\nProvided --version {version} is not valid for dataset ID {found_dataset_id}."
                                        f"\nOutput not versioned. To version manually, run:"
-                                       f"\ndt update {os.path.abspath(output_data)} --id {found_dataset_id} -v <VERSION>"
+                                       f"\ndt update {output_data} --id {found_dataset_id} -v <VERSION>"
                                        f"\nSuggested next version: {round(latest_version + 0.1, 1)}")
                         return True, status_msg, metadata
                 else:
@@ -192,7 +191,7 @@ def execute_transform(
         except Exception as e:
             status_msg += (f"\nTransform succeeded but version calculation failed: {e}"
                            f"\nOutput not versioned. To version manually, run:"
-                           f"\ndt update {os.path.abspath(output_data)} --id {found_dataset_id} -v <VERSION>")
+                           f"\ndt update {output_data} --id {found_dataset_id} -v <VERSION>")
             return True, status_msg, metadata
 
         success, update_msg = core.update_data(
@@ -212,8 +211,7 @@ def execute_transform(
             status_msg += (f"\nTransform succeeded but versioning failed: {update_msg}"
                            f"\nRun dt update --id {found_dataset_id} to version manually")
 
-    output_abs = os.path.abspath(output_data)
-    status_msg += f"\nOutput written to: {output_abs}"
+    status_msg += f"\nOutput written to: {output_data}"
     return True, status_msg, metadata
 
 def validate_transform_environment() -> Tuple[bool, str]:

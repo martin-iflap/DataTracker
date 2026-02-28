@@ -318,6 +318,21 @@ class TestAddData:
         assert not success
         assert "Database error" in msg
 
+    def test_add_data_os_walk_failure(self, temp_dir, monkeypatch):
+        """Test handling of OSError during os.walk when adding a directory"""
+        monkeypatch.setattr('data_tracker.core.fu.find_data_tracker_root', lambda: "/tracker")
+
+        def mock_os_walk(*args, **kwargs):
+            raise OSError("Permission denied")
+
+        monkeypatch.setattr('os.walk', mock_os_walk)
+
+        success, msg = core.add_data(temp_dir, "dataset", 1.0, "message")
+
+        assert not success
+        assert "File operation failed:" in msg
+        assert "Permission denied" in msg
+
 # ==================== TESTS: _add_files_to_tracker ====================
 
 class TestAddFilesToTracker:
