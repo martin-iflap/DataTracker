@@ -61,8 +61,8 @@ def execute_transform(
             preset_data = tp.get_preset(tracker_path, preset_name)
 
             # Apply overrides: CLI values take precedence over preset values
-            image = image if image is not None else preset_data.get('image', False)
-            command = command if command is not None else preset_data.get('command', False)
+            image = image if image is not None else preset_data.get('image', None)
+            command = command if command is not None else preset_data.get('command', None)
 
             # For boolean flags, only override with preset if CLI left the default False
             if not force:

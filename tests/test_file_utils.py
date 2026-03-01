@@ -242,7 +242,7 @@ class TestCopyFileToObjects:
 
     def test_copy_directory_raises_error(self, temp_tracker_dir, temp_files_for_hashing):
         """Test that OSError is raised when trying to copy a directory"""
-        with pytest.raises(OSError, match="Directory handling not implemented yet"):
+        with pytest.raises(OSError, match="Directory passed to copy_file_to_objects"):
             fu.copy_file_to_objects(temp_tracker_dir["tracker_path"],
                                    temp_files_for_hashing["test_dir"],
                                    "hash123")

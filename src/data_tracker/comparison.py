@@ -13,6 +13,7 @@ def compare_dataset_versions(dataset_id: int, name: str,
      - List added, removed, and modified files between versions
      - Show size differences of the files and total size changes
      - Format output with color coding for clarity
+     - If both versions are None, auto-compare the two most recent versions
     Returns: Tuple[bool, str]: (success, message)
     """
     try:
@@ -24,9 +25,9 @@ def compare_dataset_versions(dataset_id: int, name: str,
 
         if version_1 is None:
             with db.open_database(db_path) as conn:
-                version_1 = db.get_first_version(conn, dataset_id)
+                version_1 = db.get_second_latest_version(conn, dataset_id)
                 if version_1 is None:
-                    return False, f"Could not determine first version for dataset {name if name else ""} ID:{dataset_id}."
+                    return False, f"Dataset {name if name else ''} ID:{dataset_id} needs at least 2 versions to auto-compare."
 
         if version_2 is None:
             with db.open_database(db_path) as conn:

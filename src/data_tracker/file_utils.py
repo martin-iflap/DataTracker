@@ -38,7 +38,7 @@ def copy_file_to_objects(tracker_path: str, data_path: str, file_hash: str) -> N
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         shutil.copy2(data_path, save_path)
     else:
-        raise OSError("Directory handling not implemented yet")
+        raise OSError("Directory passed to copy_file_to_objects, expected a file: " + data_path)
 
 def hash_file(file_path: str) -> str | None:
     """Compute the hash of a file for versioning using SHA256"""
@@ -81,9 +81,13 @@ def display_structure(db_path: str, dataset_id: int, version: float = None) -> s
             return "  No versions found for this dataset."
 
         latest_version = all_versions[-1]['version']
-        original_path = all_versions[-1]['original_path']
+        target_version = version if version else latest_version
+        version_record = next(
+            (v for v in all_versions if v['version'] == target_version), all_versions[-1]
+        )
+        original_path = version_record['original_path']
 
-        all_files = db.get_files_for_version(db_path, dataset_id, None, version if version else latest_version)
+        all_files = db.get_files_for_version(db_path, dataset_id, None, target_version)
 
         if len(all_files) == 1 and all_files[0]['relative_path'] == os.path.basename(original_path):
             root_name = os.path.basename(original_path)
@@ -284,7 +288,7 @@ def export_file(export_path: str, data_id: int, name: str,
                 dataset_history = db.get_dataset_history(db_path , data_id, name)
                 if not dataset_history:
                     return False, f"Failed to retrieve root directory name for dataset ID {data_id}."
-                original_path = dataset_history[0]['original_path'] #check this if versions not chronological
+                original_path = dataset_history[0]['original_path']
                 root_dir_name = os.path.basename(original_path.rstrip(os.sep))
                 export_path = os.path.join(export_path, root_dir_name)
 

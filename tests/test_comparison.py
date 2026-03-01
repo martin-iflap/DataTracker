@@ -153,7 +153,11 @@ class TestCompareDatasetVersions:
         assert "Cannot compare the same version" in message
 
     def test_compare_auto_detect_versions(self, temp_tracker_dir):
-        """Test automatic version detection when both versions are None"""
+        """Test that auto-detection compares the two most recent versions, not first and latest.
+         - create 3 versions, then call compare with both versions as None
+         - should compare versions 2.0 and 3.0, not 1.0 and 3.0
+         - check that the message indicates the correct versions being compared
+        """
         db_path = temp_tracker_dir['db_path']
         tracker_path = temp_tracker_dir['tracker_path']
 
@@ -169,11 +173,16 @@ class TestCompareDatasetVersions:
             db_path, tracker_path, dataset_id, 2.0,
             {"file1.txt": ("hash2", 100, "content v2")}
         )
+        create_dataset_version(
+            db_path, tracker_path, dataset_id, 3.0,
+            {"file1.txt": ("hash3", 100, "content v3")}
+        )
 
         success, message = comp.compare_dataset_versions(dataset_id, None, None, None)
 
         assert success is True
-        assert "Comparison between version 1.0 and version 2.0" in message
+        assert "Comparison between version 2.0 and version 3.0" in message
+        assert "1.0" not in message.split("Comparison")[1].split("\n")[0]
 
     def test_compare_no_differences(self, temp_tracker_dir):
         """Test comparison when two versions have identical files
@@ -391,7 +400,7 @@ class TestCompareDatasetVersions:
     def test_compare_empty_dataset_error(self, temp_tracker_dir):
         """Test error when dataset has no versions and auto-detection is attempted
          - create an empty dataset with no versions, then call compare with both versions as None
-         - should fail to find first version and return appropriate error message
+         - should fail as fewer than 2 versions exist
         """
         db_path = temp_tracker_dir['db_path']
 
@@ -401,12 +410,33 @@ class TestCompareDatasetVersions:
 
         success, message = comp.compare_dataset_versions(dataset_id, None, None, 2.0)
         assert success is False
-        assert "Could not determine first version" in message
+        assert "Could not determine first version" in message or "needs at least 2 versions" in message
 
         success, message = comp.compare_dataset_versions(dataset_id, None, 1.0, None)
-
         assert success is False
         assert "Could not determine latest version" in message
+
+    def test_compare_single_version_auto_detect_fails(self, temp_tracker_dir):
+        """Test that auto-detection fails gracefully when dataset has only one version.
+         - create a dataset with only one version, then call compare with both versions as None
+         - should fail as compare needs at least 2 versions for auto-detection
+        """
+        db_path = temp_tracker_dir['db_path']
+        tracker_path = temp_tracker_dir['tracker_path']
+
+        with db.open_database(db_path) as conn:
+            dataset_id = db.insert_dataset(conn, "single-version-dataset", None)
+            conn.commit()
+
+        create_dataset_version(
+            db_path, tracker_path, dataset_id, 1.0,
+            {"file1.txt": ("hashA", 100, "only version")}
+        )
+
+        success, message = comp.compare_dataset_versions(dataset_id, None, None, None)
+
+        assert success is False
+        assert "needs at least 2 versions" in message
 
 
 def test_compare_with_invalid_version(tmp_path):

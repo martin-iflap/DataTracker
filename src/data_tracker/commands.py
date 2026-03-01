@@ -67,6 +67,12 @@ def remove(id: int, name: str) -> None:
     if bool(id) == bool(name):
         raise click.UsageError("Provide exactly one of --id or --name")
 
+    identifier = f"ID {id}" if id else f"'{name}'"
+    click.confirm(
+        f"Are you sure you want to remove dataset {identifier}? This cannot be undone.",
+        abort=True
+    )
+
     try:
         success, message = core.remove_data(id, name)
         if success:
@@ -151,8 +157,8 @@ def compare(id: int, name: str, v1: float, v2: float) -> None:
 @click.option("--id", type=int, default=None, help="ID of the dataset to export")
 @click.option("--name", default=None, help="Name of the dataset to export")
 @click.option("-v", "--version", type=float, required=True, help="Version of the dataset to export")
-@click.option("-f", "--force", is_flag=True, default=None, help="Overwrite existing files at the export location")
-@click.option("-r", "--preserve-root", is_flag=True, default=None, help="Preserve the root dataset directory name")
+@click.option("-f", "--force", is_flag=True, default=False, help="Overwrite existing files at the export location")
+@click.option("-r", "--preserve-root", is_flag=True, default=False, help="Preserve the root dataset directory name")
 def export(export_path: str, id: int, name: str,
            version: float, force: bool, preserve_root: bool) -> None:
     """Export a specific version of a dataset to a specified location"""

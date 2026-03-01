@@ -108,7 +108,7 @@ def get_dataset_history(db_path: str, dataset_id: int, name: str) -> list[dict]:
     with open_database(db_path) as conn:
         cursor = conn.cursor()
 
-        if not dataset_id:
+        if dataset_id is None:
             dataset_id = get_id_from_name(conn, name)
 
         cursor.execute("""SELECT id, object_hash, version, original_path, message, created_at
@@ -120,7 +120,7 @@ def get_files_for_version(db_path, dataset_id: int, name: str, version: float) -
     """Retrieve all files associated with a specific version ID from the tracker.db files table"""
     with open_database(db_path) as conn:
         cursor = conn.cursor()
-        if not dataset_id:
+        if dataset_id is None:
             dataset_id = get_id_from_name(conn, name)
 
         cursor.execute("""
@@ -177,12 +177,19 @@ def get_latest_version(conn: sqlite3.Connection, dataset_id: int) -> float:
     max_version = result[0] if result[0] is not None else 0
     return float(max_version)
 
-def get_first_version(conn: sqlite3.Connection, dataset_id: int) -> float | None:
-    """Get the lowest version number for a dataset with a given ID"""
+def get_second_latest_version(conn: sqlite3.Connection, dataset_id: int) -> float | None:
+    """Get the second-latest version number for a dataset with a given ID.
+     - Returns None if fewer than 2 versions exist
+    """
     cursor = conn.cursor()
-    cursor.execute("SELECT MIN(version) FROM versions WHERE dataset_id = ?", (dataset_id,))
-    result = cursor.fetchone()
-    return float(result[0]) if result[0] is not None else None
+    cursor.execute(
+        "SELECT version FROM versions WHERE dataset_id = ? ORDER BY version DESC LIMIT 2",
+        (dataset_id,)
+    )
+    result = cursor.fetchall()
+    if len(result) < 2:
+        return None
+    return float(result[1][0])
 
 def get_object_size(db_path: str, object_hash: str) -> int:
     """Retrieve object size from the objects table of tracker.db by its hash"""
