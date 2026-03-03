@@ -62,19 +62,33 @@ def update(data_path: str, id: int, name: str, version: float, message: str) -> 
 @click.command()
 @click.option("--id", type=int, default=None, help="ID of the dataset to remove")
 @click.option("--name", default=None, help="Name of the dataset to remove")
-def remove(id: int, name: str) -> None:
-    """Remove data from the tracker"""
+@click.option("-v", "--version", type=float, default=None, help="Remove only a specific version of the dataset")
+def remove(id: int, name: str, version: float) -> None:
+    """Remove data from the tracker
+     - Omit -v to remove the entire dataset including all versions.
+     - Use -v to remove a single version; refuses if it is the only version left.
+    """
     if bool(id) == bool(name):
         raise click.UsageError("Provide exactly one of --id or --name")
 
     identifier = f"ID {id}" if id else f"'{name}'"
-    click.confirm(
-        f"Are you sure you want to remove dataset {identifier}? This cannot be undone.",
-        abort=True
-    )
+    if version is not None:
+        confirm_msg = (
+            f"Are you sure you want to remove version {version} of dataset {identifier}? "
+            f"This cannot be undone."
+        )
+    else:
+        confirm_msg = (
+            f"Are you sure you want to remove dataset {identifier} and all its versions? "
+            f"This cannot be undone."
+        )
+    click.confirm(confirm_msg, abort=True)
 
     try:
-        success, message = core.remove_data(id, name)
+        if version is not None:
+            success, message = core.remove_version(id, name, version)
+        else:
+            success, message = core.remove_data(id, name)
         if success:
             click.echo(message)
         else:

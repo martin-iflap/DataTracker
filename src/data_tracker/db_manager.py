@@ -203,6 +203,32 @@ def delete_files(conn: sqlite3.Connection, dataset_id: int) -> None:
     """Delete all files associated with a dataset from the files table of tracker.db"""
     conn.execute("DELETE FROM files WHERE version_id IN (SELECT id FROM versions WHERE dataset_id = ?)", (dataset_id,))
 
+def delete_files_for_version(conn: sqlite3.Connection, version_id: int) -> None:
+    """Delete all files associated with a specific version from the files table of tracker.db"""
+    conn.execute("DELETE FROM files WHERE version_id = ?", (version_id,))
+
+def get_version_id(conn: sqlite3.Connection, dataset_id: int, version: float) -> int | None:
+    """Get the primary key ID of a specific version for a dataset from the versions table of tracker.db
+     - Returns None if the version does not exist
+    """
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id FROM versions WHERE dataset_id = ? AND version = ?",
+        (dataset_id, version)
+    )
+    row = cursor.fetchone()
+    return row['id'] if row else None
+
+def delete_version(conn: sqlite3.Connection, version_id: int) -> None:
+    """Delete a specific version row from the versions table of tracker.db by its primary key id"""
+    conn.execute("DELETE FROM versions WHERE id = ?", (version_id,))
+
+def is_only_version(conn: sqlite3.Connection, dataset_id: int) -> bool:
+    """Return True if the dataset has exactly one version remaining"""
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM versions WHERE dataset_id = ?", (dataset_id,))
+    return cursor.fetchone()[0] == 1
+
 def delete_object(conn: sqlite3.Connection) -> list[str]:
     """Delete an object from the objects table of the tracker.db database
      - Delete only if no other versions reference the same object_hash\

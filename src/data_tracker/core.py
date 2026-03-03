@@ -308,6 +308,53 @@ def remove_data(data_id: int, name: str) -> Tuple[bool, str]:
     except OSError as e:
         return False, f"Filesystem error while removing data: {e}"
 
+def remove_version(data_id: int, name: str, version: float) -> Tuple[bool, str]:
+    """Remove a single version of a dataset from the tracker
+     - Refuses if the version is the only one left; suggests using 'dt remove' instead
+     - Deletes files for the version, the version row, then cleans up orphaned objects
+    Returns: Tuple[bool, str]: (success, message)
+    """
+    hashes_to_remove = []
+    try:
+        tracker_path = fu.find_data_tracker_root()
+        if tracker_path is None:
+            return False, "Data tracker is not initialized. Please run 'dt init' first."
+
+        with db.open_database(os.path.join(tracker_path, "tracker.db")) as conn:
+            if not db.dataset_exists(conn, data_id, name):
+                return False, "Specified dataset does not exist."
+
+            if data_id is None:
+                data_id = db.get_id_from_name(conn, name)
+
+            if not db.check_version_exists(conn, data_id, version):
+                return False, f"Version {version} does not exist for the specified dataset."
+
+            if db.is_only_version(conn, data_id):
+                identifier = f"ID {data_id}" if name is None else f"'{name}'"
+                return (
+                    False,
+                    f"Version {version} is the only version of dataset {identifier}. "
+                    f"Use 'dt remove --id {data_id}' to remove the entire dataset."
+                )
+
+            version_id = db.get_version_id(conn, data_id, version)
+            db.delete_files_for_version(conn, version_id)
+            db.delete_version(conn, version_id)
+            hashes_to_remove = db.delete_object(conn)
+            conn.commit()
+
+        for file_hash in hashes_to_remove:
+            removed, err = _remove_file_object(tracker_path, file_hash)
+            if not removed:
+                return False, f"Failed to remove object file {file_hash}: {err}"
+
+        return True, f"Version {version} removed successfully."
+    except sqlite3.Error as e:
+        return False, f"Database error while removing version: {e}"
+    except OSError as e:
+        return False, f"Filesystem error while removing version: {e}"
+
 def _remove_file_object(tracker_path: str, file_hash: str) -> Tuple[bool, str]:
     """Delete the file object from the objects directory by its hash (name)
      - return True if successful, False otherwise

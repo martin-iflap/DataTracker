@@ -403,6 +403,53 @@ class TestVersionOperations:
         cursor.execute("SELECT COUNT(*) as count FROM versions WHERE dataset_id = ?", (dataset_id,))
         assert cursor.fetchone()['count'] == 0
 
+    def test_get_version_id_found_and_not_found(self, dataset_with_version):
+        """Test that get_version_id returns the correct PK for an existing version"""
+        conn = dataset_with_version['conn']
+        dataset_id = dataset_with_version['dataset_id']
+        expected_id = dataset_with_version['version_id']
+
+        found_id = db.get_version_id(conn, dataset_id, 1.0)
+        not_found_id = db.get_version_id(conn, dataset_id, 99.0)
+
+        assert found_id == expected_id
+        assert not_found_id is None
+
+    def test_delete_version_removes_correct_row(self, dataset_with_version):
+        """Test that delete_version removes only the targeted version row and leaves others intact"""
+        conn = dataset_with_version['conn']
+        dataset_id = dataset_with_version['dataset_id']
+        version_id_v1 = dataset_with_version['version_id']
+
+        db.insert_object(conn, "hash2", 2000)
+        version_id_v2 = db.insert_version(conn, dataset_id, "hash2", 2.0, "/path2", None)
+
+        db.delete_version(conn, version_id_v1)
+
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM versions WHERE dataset_id = ?", (dataset_id,))
+        remaining = [row['id'] for row in cursor.fetchall()]
+
+        assert version_id_v1 not in remaining
+        assert version_id_v2 in remaining
+
+    def test_is_only_version_true(self, dataset_with_version):
+        """Test that is_only_version returns True when exactly one version exists"""
+        conn = dataset_with_version['conn']
+        dataset_id = dataset_with_version['dataset_id']
+
+        assert db.is_only_version(conn, dataset_id) is True
+
+    def test_is_only_version_false(self, dataset_with_version):
+        """Test that is_only_version returns False when multiple versions exist"""
+        conn = dataset_with_version['conn']
+        dataset_id = dataset_with_version['dataset_id']
+
+        db.insert_object(conn, "hash2", 2000)
+        db.insert_version(conn, dataset_id, "hash2", 2.0, "/path2", None)
+
+        assert db.is_only_version(conn, dataset_id) is False
+
     def test_get_dataset_history(self, dataset_with_version_no_conn):
         """Test retrieving all versions for a specific dataset
          - use fixtures version and create an additional one to test multiple versions
@@ -474,6 +521,32 @@ class TestFileOperations:
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) as count FROM files WHERE version_id = ?", (version_id,))
         assert cursor.fetchone()['count'] == 0
+
+    def test_delete_files_for_version_only_targets_that_version(self, dataset_with_version):
+        """Test that delete_files_for_version removes files only for the given version_id
+         - create two versions each with a file and verify only the targeted version's
+           files are deleted while the other version's files remain intact
+        """
+        conn = dataset_with_version['conn']
+        dataset_id = dataset_with_version['dataset_id']
+        version_id_v1 = dataset_with_version['version_id']
+
+        db.insert_object(conn, "hash_v2", 500)
+        version_id_v2 = db.insert_version(conn, dataset_id, "hash_v2", 2.0, "/path2", None)
+
+        db.insert_object(conn, "file_hash_v1", 100)
+        db.insert_object(conn, "file_hash_v2", 200)
+        db.insert_files(conn, version_id_v1, "file_hash_v1", "v1_file.txt")
+        db.insert_files(conn, version_id_v2, "file_hash_v2", "v2_file.txt")
+
+        db.delete_files_for_version(conn, version_id_v1)
+
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) as count FROM files WHERE version_id = ?", (version_id_v1,))
+        assert cursor.fetchone()['count'] == 0
+
+        cursor.execute("SELECT COUNT(*) as count FROM files WHERE version_id = ?", (version_id_v2,))
+        assert cursor.fetchone()['count'] == 1
 
     def test_get_files_for_version(self, dataset_with_version_no_conn):
         """Test retrieving all files for a specific version

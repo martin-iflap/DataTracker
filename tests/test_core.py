@@ -694,6 +694,19 @@ class TestUpdateData:
 class TestRemoveData:
     """Test removing datasets"""
 
+    def _patch_db(self, monkeypatch, mock_conn, *, dataset_exists=True, hashes=None):
+        """Patch all db calls used by remove_data with sensible defaults.
+         - dataset_exists controls whether the dataset is found
+         - hashes is the list of object hashes returned by delete_object for cleanup
+        """
+        monkeypatch.setattr('data_tracker.core.db.open_database', Mock(return_value=mock_conn))
+        monkeypatch.setattr('data_tracker.core.db.dataset_exists', Mock(return_value=dataset_exists))
+        monkeypatch.setattr('data_tracker.core.db.get_id_from_name', Mock(return_value=123))
+        monkeypatch.setattr('data_tracker.core.db.delete_files', Mock())
+        monkeypatch.setattr('data_tracker.core.db.delete_versions', Mock())
+        monkeypatch.setattr('data_tracker.core.db.delete_object', Mock(return_value=hashes or []))
+        monkeypatch.setattr('data_tracker.core.db.delete_dataset', Mock())
+
     def test_remove_tracker_not_initialized(self, monkeypatch):
         """Test error when tracker is not initialized"""
         monkeypatch.setattr('data_tracker.core.fu.find_data_tracker_root', lambda: None)
@@ -706,8 +719,7 @@ class TestRemoveData:
     def test_remove_dataset_does_not_exist(self, mock_db_connection, monkeypatch):
         """Test error when dataset doesn't exist"""
         monkeypatch.setattr('data_tracker.core.fu.find_data_tracker_root', lambda: "/tracker")
-        monkeypatch.setattr('data_tracker.core.db.open_database', Mock(return_value=mock_db_connection))
-        monkeypatch.setattr('data_tracker.core.db.dataset_exists', Mock(return_value=False))
+        self._patch_db(monkeypatch, mock_db_connection, dataset_exists=False)
 
         success, msg = core.remove_data(999, None)
 
@@ -717,29 +729,17 @@ class TestRemoveData:
     def test_remove_with_name_resolves_id(self, mock_db_connection, monkeypatch):
         """Test that dataset name is resolved to ID"""
         monkeypatch.setattr('data_tracker.core.fu.find_data_tracker_root', lambda: "/tracker")
-        monkeypatch.setattr('data_tracker.core.db.open_database', Mock(return_value=mock_db_connection))
-        monkeypatch.setattr('data_tracker.core.db.dataset_exists', Mock(return_value=True))
-        monkeypatch.setattr('data_tracker.core.db.get_id_from_name', Mock(return_value=123))
-        monkeypatch.setattr('data_tracker.core.db.delete_files', Mock())
-        monkeypatch.setattr('data_tracker.core.db.delete_versions', Mock())
-        monkeypatch.setattr('data_tracker.core.db.delete_object', Mock(return_value=[]))
-        monkeypatch.setattr('data_tracker.core.db.delete_dataset', Mock())
+        self._patch_db(monkeypatch, mock_db_connection)
 
         success, msg = core.remove_data(None, "test-dataset")
 
         assert success
-
         core.db.get_id_from_name.assert_called_once_with(mock_db_connection, "test-dataset")
 
     def test_remove_success_with_object_cleanup(self, mock_db_connection, monkeypatch):
         """Test successful removal with object file cleanup"""
         monkeypatch.setattr('data_tracker.core.fu.find_data_tracker_root', lambda: "/tracker")
-        monkeypatch.setattr('data_tracker.core.db.open_database', Mock(return_value=mock_db_connection))
-        monkeypatch.setattr('data_tracker.core.db.dataset_exists', Mock(return_value=True))
-        monkeypatch.setattr('data_tracker.core.db.delete_files', Mock())
-        monkeypatch.setattr('data_tracker.core.db.delete_versions', Mock())
-        monkeypatch.setattr('data_tracker.core.db.delete_object', Mock(return_value=["hash1", "hash2"]))
-        monkeypatch.setattr('data_tracker.core.db.delete_dataset', Mock())
+        self._patch_db(monkeypatch, mock_db_connection, hashes=["hash1", "hash2"])
 
         mock_remove_object = Mock(return_value=(True, ""))
         monkeypatch.setattr('data_tracker.core._remove_file_object', mock_remove_object)
@@ -748,13 +748,9 @@ class TestRemoveData:
 
         assert success
         assert "removed successfully" in msg
-
-        # Verify all delete operations were called
         core.db.delete_files.assert_called_once_with(mock_db_connection, 123)
         core.db.delete_versions.assert_called_once_with(mock_db_connection, 123)
         core.db.delete_dataset.assert_called_once_with(mock_db_connection, 123)
-
-        # Verify object files were removed
         assert mock_remove_object.call_count == 2
         mock_remove_object.assert_any_call("/tracker", "hash1")
         mock_remove_object.assert_any_call("/tracker", "hash2")
@@ -762,21 +758,162 @@ class TestRemoveData:
     def test_remove_object_cleanup_failure(self, mock_db_connection, monkeypatch):
         """Test error when object file cleanup fails"""
         monkeypatch.setattr('data_tracker.core.fu.find_data_tracker_root', lambda: "/tracker")
-        monkeypatch.setattr('data_tracker.core.db.open_database', Mock(return_value=mock_db_connection))
-        monkeypatch.setattr('data_tracker.core.db.dataset_exists', Mock(return_value=True))
-        monkeypatch.setattr('data_tracker.core.db.delete_files', Mock())
-        monkeypatch.setattr('data_tracker.core.db.delete_versions', Mock())
-        monkeypatch.setattr('data_tracker.core.db.delete_object', Mock(return_value=["hash1"]))
-        monkeypatch.setattr('data_tracker.core.db.delete_dataset', Mock())
+        self._patch_db(monkeypatch, mock_db_connection, hashes=["hash1"])
 
-        mock_remove_object = Mock(return_value=(False, "Permission denied"))
-        monkeypatch.setattr('data_tracker.core._remove_file_object', mock_remove_object)
+        monkeypatch.setattr('data_tracker.core._remove_file_object',
+                            Mock(return_value=(False, "Permission denied")))
 
         success, msg = core.remove_data(123, None)
 
         assert not success
         assert "Failed to remove object file" in msg
         assert "Permission denied" in msg
+
+# ==================== TESTS: remove_version ====================
+
+class TestRemoveVersion:
+    """Test removing a single version of a dataset"""
+
+    def _patch_db(self, monkeypatch, mock_conn, *, dataset_exists=True,
+                  version_exists=True, only_version=False,
+                  version_id=42, hashes=None):
+        """Patch all db calls used by remove_version with sensible defaults."""
+        monkeypatch.setattr('data_tracker.core.db.open_database', Mock(return_value=mock_conn))
+        monkeypatch.setattr('data_tracker.core.db.dataset_exists', Mock(return_value=dataset_exists))
+        monkeypatch.setattr('data_tracker.core.db.get_id_from_name', Mock(return_value=123))
+        monkeypatch.setattr('data_tracker.core.db.check_version_exists', Mock(return_value=version_exists))
+        monkeypatch.setattr('data_tracker.core.db.is_only_version', Mock(return_value=only_version))
+        monkeypatch.setattr('data_tracker.core.db.get_version_id', Mock(return_value=version_id))
+        monkeypatch.setattr('data_tracker.core.db.delete_files_for_version', Mock())
+        monkeypatch.setattr('data_tracker.core.db.delete_version', Mock())
+        monkeypatch.setattr('data_tracker.core.db.delete_object', Mock(return_value=hashes or []))
+
+    def test_remove_version_tracker_not_initialized(self, monkeypatch):
+        """Test error when tracker is not initialized"""
+        monkeypatch.setattr('data_tracker.core.fu.find_data_tracker_root', lambda: None)
+
+        success, msg = core.remove_version(1, None, 1.0)
+
+        assert not success
+        assert "not initialized" in msg
+
+    def test_remove_version_dataset_does_not_exist(self, mock_db_connection, monkeypatch):
+        """Test error when the specified dataset does not exist"""
+        monkeypatch.setattr('data_tracker.core.fu.find_data_tracker_root', lambda: "/tracker")
+        self._patch_db(monkeypatch, mock_db_connection, dataset_exists=False)
+
+        success, msg = core.remove_version(999, None, 1.0)
+
+        assert not success
+        assert "does not exist" in msg
+
+    def test_remove_version_version_does_not_exist(self, mock_db_connection, monkeypatch):
+        """Test error when the specified version does not exist"""
+        monkeypatch.setattr('data_tracker.core.fu.find_data_tracker_root', lambda: "/tracker")
+        self._patch_db(monkeypatch, mock_db_connection, version_exists=False)
+
+        success, msg = core.remove_version(1, None, 9.0)
+
+        assert not success
+        assert "does not exist" in msg
+        assert "9.0" in msg
+
+    def test_remove_version_is_only_version_by_id(self, mock_db_connection, monkeypatch):
+        """Test refusal with helpful message when version is the only one (identified by id)"""
+        monkeypatch.setattr('data_tracker.core.fu.find_data_tracker_root', lambda: "/tracker")
+        self._patch_db(monkeypatch, mock_db_connection, only_version=True)
+
+        success, msg = core.remove_version(5, None, 1.0)
+
+        assert not success
+        assert "only version" in msg
+        assert "dt remove --id 5" in msg
+
+    def test_remove_version_is_only_version_by_name(self, mock_db_connection, monkeypatch):
+        """Test refusal with helpful message when version is the only one (identified by name)
+         - when resolved via name the message should mention the name not the resolved id
+        """
+        monkeypatch.setattr('data_tracker.core.fu.find_data_tracker_root', lambda: "/tracker")
+        self._patch_db(monkeypatch, mock_db_connection, only_version=True)
+
+        success, msg = core.remove_version(None, "my-dataset", 1.0)
+
+        assert not success
+        assert "only version" in msg
+        assert "'my-dataset'" in msg
+
+    def test_remove_version_name_resolves_to_id(self, mock_db_connection, monkeypatch):
+        """Test that dataset name is resolved to ID before deletion"""
+        monkeypatch.setattr('data_tracker.core.fu.find_data_tracker_root', lambda: "/tracker")
+        self._patch_db(monkeypatch, mock_db_connection)
+        monkeypatch.setattr('data_tracker.core._remove_file_object', Mock(return_value=(True, "")))
+
+        core.remove_version(None, "my-dataset", 2.0)
+
+        core.db.get_id_from_name.assert_called_once_with(mock_db_connection, "my-dataset")
+
+    def test_remove_version_correct_deletion_order(self, mock_db_connection, monkeypatch):
+        """Test that deletion follows the required order: files → version row → orphan objects
+         - FK constraint requires files to be deleted before the version row
+        """
+        monkeypatch.setattr('data_tracker.core.fu.find_data_tracker_root', lambda: "/tracker")
+        self._patch_db(monkeypatch, mock_db_connection, version_id=42, hashes=[])
+        monkeypatch.setattr('data_tracker.core._remove_file_object', Mock(return_value=(True, "")))
+
+        call_order = []
+        core.db.delete_files_for_version.side_effect = lambda *a: call_order.append("files")
+        core.db.delete_version.side_effect = lambda *a: call_order.append("version")
+        core.db.delete_object.side_effect = lambda *a: (call_order.append("objects"), [])[1]
+
+        success, msg = core.remove_version(1, None, 2.0)
+
+        assert success
+        assert call_order == ["files", "version", "objects"]
+        core.db.delete_files_for_version.assert_called_once_with(mock_db_connection, 42)
+        core.db.delete_version.assert_called_once_with(mock_db_connection, 42)
+
+    def test_remove_version_success_with_object_cleanup(self, mock_db_connection, monkeypatch):
+        """Test successful version removal including filesystem object cleanup"""
+        monkeypatch.setattr('data_tracker.core.fu.find_data_tracker_root', lambda: "/tracker")
+        self._patch_db(monkeypatch, mock_db_connection, hashes=["hash1", "hash2"])
+
+        mock_remove = Mock(return_value=(True, ""))
+        monkeypatch.setattr('data_tracker.core._remove_file_object', mock_remove)
+
+        success, msg = core.remove_version(1, None, 2.0)
+
+        assert success
+        assert "removed successfully" in msg
+        assert "2.0" in msg
+        assert mock_remove.call_count == 2
+        mock_remove.assert_any_call("/tracker", "hash1")
+        mock_remove.assert_any_call("/tracker", "hash2")
+
+    def test_remove_version_object_cleanup_failure(self, mock_db_connection, monkeypatch):
+        """Test error propagation when filesystem object cleanup fails"""
+        monkeypatch.setattr('data_tracker.core.fu.find_data_tracker_root', lambda: "/tracker")
+        self._patch_db(monkeypatch, mock_db_connection, hashes=["hash1"])
+
+        monkeypatch.setattr('data_tracker.core._remove_file_object',
+                            Mock(return_value=(False, "Permission denied")))
+
+        success, msg = core.remove_version(1, None, 2.0)
+
+        assert not success
+        assert "Failed to remove object file" in msg
+        assert "Permission denied" in msg
+
+    def test_remove_version_sqlite_error(self, mock_db_connection, monkeypatch):
+        """Test that sqlite3.Error is caught and returned as failure message"""
+        monkeypatch.setattr('data_tracker.core.fu.find_data_tracker_root', lambda: "/tracker")
+        self._patch_db(monkeypatch, mock_db_connection)
+        core.db.delete_files_for_version.side_effect = sqlite3.Error("DB locked")
+
+        success, msg = core.remove_version(1, None, 2.0)
+
+        assert not success
+        assert "Database error" in msg
+        assert "DB locked" in msg
 
 # ==================== TESTS: _remove_file_object ====================
 
