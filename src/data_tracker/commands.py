@@ -4,6 +4,7 @@ import data_tracker.metadata as metadata
 import data_tracker.file_utils as fu
 import data_tracker.transform as tf
 import data_tracker.core as core
+import data_tracker.status as st
 import click
 import sys
 import os
@@ -334,6 +335,20 @@ def annotate(new_message: str, id: int, name: str, version: float, latest: bool,
         click.secho(f"Error: {e}", fg="red", err=True)
         sys.exit(1)
 
+@click.command()
+@click.option("-d", "--detailed", type=bool, is_flag=True,
+              default=False, help="Show detailed information about tracked datasets")
+def status(detailed: bool) -> None:
+    """Show the status of tracked datasets"""
+    try:
+        success, message = st.get_status(detailed)
+        if success:
+            click.echo(message)
+        else:
+            click.secho(message, fg="red")
+    except Exception as e:
+        click.secho(f"Error: {e}", fg="red", err=True)
+        sys.exit(1)
 
 
 

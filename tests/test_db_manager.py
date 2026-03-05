@@ -479,6 +479,33 @@ class TestVersionOperations:
         assert version_info is not None
         assert db.hash_exists(conn, "nonexistent_hash") is None
 
+    def test_get_latest_version_info(self, dataset_with_version_no_conn):
+        """Test retrieving latest version info for a dataset
+         - use fixture to set up one version and add another to test retrieval of latest
+        """
+        db_path = dataset_with_version_no_conn['db_path']
+        dataset_id = dataset_with_version_no_conn['dataset_id']
+
+        with db.open_database(db_path) as conn:
+            db.insert_object(conn, "hash2", 2000)
+            db.insert_version(conn, dataset_id, "hash2", 2.0, "/path2", None)
+            conn.commit()
+
+        latest_info = db.get_latest_version_info(db_path=db_path, dataset_id=dataset_id)
+        assert latest_info is not None
+        assert latest_info['version'] == 2.0
+        assert latest_info['original_path'] == "C:\\path2"
+        assert latest_info['object_hash'] == "hash2"
+
+    def test_get_latest_version_info_no_versions(self, in_memory_db_no_connection):
+        """Test that get_latest_version_info returns None for dataset with no versions"""
+        with db.open_database(in_memory_db_no_connection) as conn:
+            dataset_id = db.insert_dataset(conn, "test-dataset", None)
+            conn.commit()
+
+        latest_info = db.get_latest_version_info(db_path=in_memory_db_no_connection, dataset_id=dataset_id)
+        assert latest_info is None
+
 # ---------------- FILE OPERATIONS ------------------
 
 class TestFileOperations:

@@ -103,6 +103,22 @@ def get_all_datasets(db_path: str) -> list[dict]:
         cursor.execute("SELECT * FROM datasets")
         return [dict(row) for row in cursor.fetchall()]
 
+def get_latest_version_info(db_path: str, dataset_id: int) -> dict | None:
+    """Return original_path, object_hash, and version number for the latest version of a dataset.
+     - Returns None if the dataset has no versions.
+    """
+    with open_database(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT object_hash, version, original_path
+            FROM versions
+            WHERE dataset_id = ?
+            ORDER BY version DESC
+            LIMIT 1
+        """, (dataset_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
 def get_dataset_history(db_path: str, dataset_id: int, name: str) -> list[dict]:
     """Retrieve all the version information for a specific dataset from the tracker.db version table"""
     with open_database(db_path) as conn:
