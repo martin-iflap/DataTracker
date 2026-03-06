@@ -32,7 +32,7 @@ def get_status(detailed: bool) -> Tuple[bool, str]:
             name = dataset['name']
 
             history = db.get_dataset_history(db_path, dataset_id, None) if detailed else None
-            latest = history[-1] if history is not None else db.get_latest_version_info(db_path, dataset_id)
+            latest = history[-1] if history and len(history) > 0 else (db.get_latest_version_info(db_path, dataset_id) if not detailed else None)
 
             if latest is None:
                 lines.append(f"  {Fore.YELLOW}? {name} (ID: {dataset_id}) — no versions found{Fore.RESET}")
