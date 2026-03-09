@@ -1,5 +1,5 @@
+import data_tracker.transform_preset.preset_basic as tp
 import data_tracker.comparison as comparison
-import data_tracker.transform_preset as tp
 import data_tracker.metadata as metadata
 import data_tracker.file_utils as fu
 import data_tracker.transform as tf
@@ -72,7 +72,7 @@ def remove(id: int, name: str, version: float) -> None:
     if bool(id) == bool(name):
         raise click.UsageError("Provide exactly one of --id or --name")
 
-    identifier = f"ID {id}" if id else f"'{name}'"
+    identifier = f"ID: {id}" if id else f"'{name}'"
     if version is not None:
         confirm_msg = (
             f"Are you sure you want to remove version {version} of dataset {identifier}? "

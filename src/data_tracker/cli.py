@@ -1,3 +1,4 @@
+import data_tracker.transform_preset.preset_cli as preset_commands
 import data_tracker.commands as commands
 import click
 
@@ -20,3 +21,4 @@ cli.add_command(commands.storage)
 cli.add_command(commands.rename)
 cli.add_command(commands.annotate)
 cli.add_command(commands.status)
+cli.add_command(preset_commands.preset)

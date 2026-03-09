@@ -1,6 +1,6 @@
 """Business logic for transform command - keeps commands.py thin"""
 import data_tracker.docker_manager as docker_m
-import data_tracker.transform_preset as tp
+import data_tracker.transform_preset.preset_basic as tp
 import data_tracker.file_utils as fu
 import data_tracker.db_manager as db
 from typing import Tuple, Optional
@@ -71,6 +71,12 @@ def execute_transform(
                 auto_track = preset_data.get('auto_track', False)
             if not no_track:
                 no_track = preset_data.get('no_track', False)
+
+            if auto_track and no_track:
+                return False, (
+                    f"Preset '{preset_name}' has conflicting tracking settings: auto_track and no_track cannot both be true.\n"
+                    f"Please update the preset configuration to resolve this conflict."
+                ), metadata
 
             if message is None:
                 message = preset_data.get('message')

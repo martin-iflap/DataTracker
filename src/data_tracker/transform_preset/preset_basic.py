@@ -12,7 +12,8 @@ def init_preset(tracker_path: str) -> None:
             "example-python": {
                 "image": "python:3.11-slim",
                 "command": "python /input/script.py --output /output/result.csv",
-                "auto_track": True,
+                "auto_track": False,
+                "no_track": False,
                 "message": "Example python transformation",
                 "force": False,
             }
@@ -24,7 +25,7 @@ def init_preset(tracker_path: str) -> None:
         json.dump(preset_template, f, indent=4)
 
 def load_presets(tracker_path: str) -> dict:
-    """Load the preset configuration from the JSON file and return as dict.
+    """Load all the presets from the JSON file and return as dict.
     Args:
         tracker_path: Path to .data_tracker directory
     Returns:
