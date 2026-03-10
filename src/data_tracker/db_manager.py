@@ -85,7 +85,7 @@ def insert_version(conn: sqlite3.Connection, data_set_id: int,
 
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT OR IGNORE INTO versions (dataset_id, object_hash, version, original_path, message) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO versions (dataset_id, object_hash, version, original_path, message) VALUES (?, ?, ?, ?, ?)",
         (data_set_id, object_hash, version, normalized_path, message))
     return cursor.lastrowid
 
@@ -271,9 +271,11 @@ def delete_dataset(conn: sqlite3.Connection, dataset_id: int) -> None:
     conn.execute("DELETE FROM datasets WHERE id = ?", (dataset_id,))
 
 def object_is_used(conn: sqlite3.Connection, object_hash: str) -> bool:
-    """Check if an object hash is referenced by any version in the versions table"""
+    """Check if an object hash is still referenced by any file entry in the files table.
+     - Uses the files table as the source of truth, consistent with delete_object.
+    """
     cursor = conn.cursor()
-    cursor.execute("SELECT 1 FROM versions WHERE object_hash = ?", (object_hash,))
+    cursor.execute("SELECT 1 FROM files WHERE object_hash = ?", (object_hash,))
     return cursor.fetchone() is not None
 
 def find_dataset_by_path(db_path: str, path: str) -> int | None:

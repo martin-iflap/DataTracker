@@ -285,10 +285,16 @@ def export_file(export_path: str, data_id: int, name: str,
             shutil.copy2(source, dest)
         else:
             if preserve_root:
-                dataset_history = db.get_dataset_history(db_path , data_id, name)
+                dataset_history = db.get_dataset_history(db_path, data_id, name)
                 if not dataset_history:
                     return False, f"Failed to retrieve root directory name for dataset ID {data_id}."
-                original_path = dataset_history[0]['original_path']
+                version_record = next(
+                    (v for v in dataset_history if float(v['version']) == float(version)),
+                    None
+                )
+                if version_record is None:
+                    return False, f"Version {version} not found in dataset history."
+                original_path = version_record['original_path']
                 root_dir_name = os.path.basename(original_path.rstrip(os.sep))
                 export_path = os.path.join(export_path, root_dir_name)
 

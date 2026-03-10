@@ -280,9 +280,12 @@ class TestObjectOperations:
         assert row['size'] == 1000
 
     def test_object_is_used(self, dataset_with_version):
-        """Test checking if object is referenced by versions"""
+        """Test checking if object is referenced by any files in the files table"""
         conn = dataset_with_version['conn']
+        version_id = dataset_with_version['version_id']
         object_hash = dataset_with_version['object_hash']
+
+        db.insert_files(conn, version_id, object_hash, "file.txt")
 
         assert db.object_is_used(conn, object_hash) is True
         assert db.object_is_used(conn, "unused_hash") is False

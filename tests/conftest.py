@@ -1,5 +1,5 @@
 """Shared pytest fixtures for all test modules"""
-import data_tracker.transform_preset as tp
+import data_tracker.transform_preset.preset_basic as tp
 import data_tracker.db_manager as db
 import tempfile
 import shutil

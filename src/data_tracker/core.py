@@ -96,8 +96,6 @@ def validate_dataset_name(name: str) -> Tuple[bool, str]:
     if any(ord(c) < 32 and c not in '\t' for c in cleaned):
         return False, "Dataset name cannot contain control characters (newlines, etc.)"
 
-    if cleaned.isdigit():
-        pass
 
     return True, cleaned
 

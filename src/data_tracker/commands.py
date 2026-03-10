@@ -47,7 +47,7 @@ def add(data_path: str, title: str, version: float, message: str) -> None:
 @click.option("-m", "--message", default=None, help="Message describing the update")
 def update(data_path: str, id: int, name: str, version: float, message: str) -> None:
     """Add a new version of existing dataset to the tracker"""
-    if bool(id) == bool(name):
+    if (id is None) == (name is None):
         raise click.UsageError("Provide exactly one of --id or --name")
 
     try:
@@ -69,7 +69,7 @@ def remove(id: int, name: str, version: float) -> None:
      - Omit -v to remove the entire dataset including all versions.
      - Use -v to remove a single version; refuses if it is the only version left.
     """
-    if bool(id) == bool(name):
+    if (id is None) == (name is None):
         raise click.UsageError("Provide exactly one of --id or --name")
 
     identifier = f"ID: {id}" if id else f"'{name}'"
@@ -118,7 +118,7 @@ def ls(structure: bool) -> None:
 @click.option("-d", "--detailed", is_flag=True, help="Show detailed history with file changes")
 def history(id: int, name: str, detailed: bool) -> None:
     """Show history of changes for a specific data file"""
-    if bool(id) == bool(name):
+    if (id is None) == (name is None):
         raise click.UsageError("Provide exactly one of --id or --name")
     try:
         success, message = core.get_history(id, name, detailed)
@@ -136,7 +136,7 @@ def history(id: int, name: str, detailed: bool) -> None:
 @click.option("--name", default=None, help="Name of the dataset")
 def view(id: int, name: str, version: float) -> None:
     """Open a specific version of a dataset"""
-    if bool(id) == bool(name):
+    if (id is None) == (name is None):
         raise click.UsageError("Provide exactly one of --id or --name")
     try:
         success, message = fu.open_dataset_version(id, name, version)
@@ -155,7 +155,7 @@ def view(id: int, name: str, version: float) -> None:
 @click.option("--name", default=None, help="Name of the dataset")
 def compare(id: int, name: str, v1: float, v2: float) -> None:
     """Compare two versions of a dataset and show differences"""
-    if bool(id) == bool(name):
+    if (id is None) == (name is None):
         raise click.UsageError("Provide exactly one of --id or --name")
     try:
         success, message = comparison.compare_dataset_versions(id, name, v1, v2)
@@ -177,10 +177,9 @@ def compare(id: int, name: str, v1: float, v2: float) -> None:
 def export(export_path: str, id: int, name: str,
            version: float, force: bool, preserve_root: bool) -> None:
     """Export a specific version of a dataset to a specified location"""
+    if (id is None) == (name is None):
+        raise click.UsageError("Provide exactly one of --id or --name")
     try:
-        if bool(id) == bool(name):
-            raise click.UsageError("Provide exactly one of --id or --name")
-
         success, message = fu.export_file(export_path, id, name, version, force, preserve_root)
         if success:
             click.echo(message)
@@ -288,7 +287,7 @@ def storage() -> None:
 @click.option("-n", "--name", required=False, help="Old name of the dataset to rename")
 def rename(new_name: str, id: int, name: str) -> None:
     """Rename a dataset specified by the dataset ID or name"""
-    if bool(id) == bool(name):
+    if (id is None) == (name is None):
         raise click.UsageError("Provide exactly one of --id or --name")
     try:
         success, message = metadata.rename_dataset(id, name, new_name)
@@ -311,7 +310,7 @@ def annotate(new_message: str, id: int, name: str, version: float, latest: bool,
     """Update the message for a specific dataset version
     - specify dataset by id or name, version number and new message
     """
-    if bool(id) == bool(name):
+    if (id is None) == (name is None):
         raise click.UsageError("Provide exactly one of --id or --name")
 
     choices = [version is not None, latest, dataset]
