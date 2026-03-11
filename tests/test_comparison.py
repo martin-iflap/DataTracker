@@ -150,7 +150,7 @@ class TestCompareDatasetVersions:
         success, message = comp.compare_dataset_versions(dataset_id, None, 1.0, 1.0)
 
         assert success is False
-        assert "Cannot compare the same version" in message
+        assert "Cannot compare a version to itself" in message
 
     def test_compare_auto_detect_versions(self, temp_tracker_dir):
         """Test that auto-detection compares the two most recent versions, not first and latest.

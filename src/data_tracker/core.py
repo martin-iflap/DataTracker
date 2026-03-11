@@ -61,6 +61,8 @@ def add_data(data_path: str, title: str, version: float, message: str) -> Tuple[
                     filepath = os.path.join(root, f_name)
                     rel_path = os.path.relpath(filepath, data_path)
                     files_to_add.append((filepath, rel_path))
+            if not files_to_add:
+                return False, f"Directory '{data_path}' is empty. Nothing to add."
 
         return _add_files_to_tracker(files_to_add, tracker_path, data_path,
                                      title=title, version=version, message=message)
@@ -114,7 +116,7 @@ def _add_files_to_tracker(files: list[Tuple[str, str]], tracker_path: str,
         action: str = "added" if dataset_id is None else "updated"
 
         with db.open_database(db_path) as conn:
-            if version and db.check_version_exists(conn, dataset_id, version):
+            if version is not None and db.check_version_exists(conn, dataset_id, version):
                 return False, f"Version {version} already exists for the specified dataset."
 
             if dataset_id is None:
@@ -254,6 +256,8 @@ def update_data(data_path: str, data_id: int, name: str, version: float, message
                     filepath = os.path.join(root, f_name)
                     rel_path = os.path.relpath(filepath, data_path)
                     files_to_add.append((filepath, rel_path))
+            if not files_to_add:
+                return False, f"Directory '{data_path}' is empty. Nothing to add."
 
         with db.open_database(db_path) as conn:
             if not db.dataset_exists(conn, data_id, name):

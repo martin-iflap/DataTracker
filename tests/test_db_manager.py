@@ -290,6 +290,18 @@ class TestObjectOperations:
         assert db.object_is_used(conn, object_hash) is True
         assert db.object_is_used(conn, "unused_hash") is False
 
+    def test_object_is_used_checks_files(self, dataset_with_version):
+        """Verify object_is_used checks the files table, not the versions table.
+        An object hash that exists in versions.object_hash but has no row in files
+        must return False, because it's not actually used by any files.
+        """
+        conn = dataset_with_version['conn']
+        object_hash = dataset_with_version['object_hash']
+
+        # The fixture inserts a version row with object_hash, but no files row yet.
+        # If the function were checking versions, this would return True — it must return False.
+        assert db.object_is_used(conn, object_hash) is False
+
     def test_delete_unused_objects(self, in_memory_db):
         """Test deleting objects not referenced by any files
          - add objects with both used and unused hashes
@@ -346,6 +358,27 @@ class TestVersionOperations:
         assert version['original_path'] == "C:\\path\\to\\data"
         assert version['object_hash'] == "abc123"
         assert version['message'] == "Initial version"
+
+    def test_insert_version_returns_valid_id(self, in_memory_db):
+        """Verify insert_version always returns the actual inserted row ID.
+        With plain INSERT, lastrowid must equal the row's real primary key.
+        """
+        dataset_id = db.insert_dataset(in_memory_db, "test-dataset", None)
+
+        v1_id = db.insert_version(in_memory_db, dataset_id, "hash1", 1.0, "/path", None)
+        v2_id = db.insert_version(in_memory_db, dataset_id, "hash2", 2.0, "/path", None)
+
+        assert v1_id is not None
+        assert v2_id is not None
+        assert v1_id != 0
+        assert v2_id != 0
+        assert v2_id > v1_id  # AUTOINCREMENT guarantees strictly increasing IDs
+
+        # Confirm both IDs actually exist in the table
+        cursor = in_memory_db.cursor()
+        cursor.execute("SELECT id FROM versions WHERE id IN (?, ?)", (v1_id, v2_id))
+        found_ids = {row['id'] for row in cursor.fetchall()}
+        assert found_ids == {v1_id, v2_id}
 
     def test_check_version_exists(self, dataset_with_version):
         """Test checking if a version exists

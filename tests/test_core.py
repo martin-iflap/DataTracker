@@ -333,6 +333,16 @@ class TestAddData:
         assert "File operation failed:" in msg
         assert "Permission denied" in msg
 
+    def test_add_data_empty_directory(self, temp_dir, monkeypatch):
+        """Test that adding an empty directory returns a clear error instead of silently versioning nothing."""
+        monkeypatch.setattr('data_tracker.core.fu.find_data_tracker_root', lambda: "/tracker")
+
+        success, msg = core.add_data(temp_dir, "dataset", 1.0, "message")
+
+        assert not success
+        assert "empty" in msg.lower()
+        assert "Nothing to add" in msg
+
 # ==================== TESTS: _add_files_to_tracker ====================
 
 class TestAddFilesToTracker:
@@ -412,6 +422,24 @@ class TestAddFilesToTracker:
 
         assert not success
         assert "already exists" in msg
+
+    def test_version_zero_duplicate_is_caught(self, mock_db_connection, monkeypatch):
+        """Test that version=0 duplicate is caught correctly.
+        Version 0 is a special case where we check for existing versions to prevent duplicates,
+        so we need to ensure the logic correctly identifies this scenario and returns the
+        appropriate error message.
+        """
+        monkeypatch.setattr('data_tracker.core.db.open_database', Mock(return_value=mock_db_connection))
+        monkeypatch.setattr('data_tracker.core.db.check_version_exists', Mock(return_value=True))
+
+        success, msg = core._add_files_to_tracker(
+            [("/file", "file")], "/tracker", "/file",
+            dataset_id=123, version=0
+        )
+
+        assert not success
+        assert "already exists" in msg
+        core.db.check_version_exists.assert_called_once_with(mock_db_connection, 123, 0)
 
     def test_duplicate_title_error(self, mock_db_connection, monkeypatch):
         """Test error when creating dataset with an existing title."""
@@ -688,6 +716,16 @@ class TestUpdateData:
         call_args = mock_add_files.call_args
         files_arg = call_args[0][0]
         assert len(files_arg) == 1
+
+    def test_update_data_empty_directory(self, temp_dir, monkeypatch):
+        """Test that updating with an empty directory returns a clear error."""
+        monkeypatch.setattr('data_tracker.core.fu.find_data_tracker_root', lambda: "/tracker")
+
+        success, msg = core.update_data(temp_dir, 123, None, 2.0, "message")
+
+        assert not success
+        assert "empty" in msg.lower()
+        assert "Nothing to add" in msg
 
 # ==================== TESTS: remove_data ====================
 

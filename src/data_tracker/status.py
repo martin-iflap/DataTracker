@@ -25,7 +25,7 @@ def get_status(detailed: bool) -> Tuple[bool, str]:
         if not all_datasets:
             return True, "Data tracker is initialized but no datasets are being tracked."
 
-        lines = ["Tracked datasets:"]
+        lines = [f"Tracked datasets ({len(all_datasets)}):"]
 
         for dataset in all_datasets:
             dataset_id = dataset['id']
@@ -43,8 +43,8 @@ def get_status(detailed: bool) -> Tuple[bool, str]:
 
             if not os.path.exists(original_path):
                 lines.append(
-                    f"  {Fore.RED}✗ {name} (ID: {dataset_id})  v{latest_version}"
-                    f"  — not found at {original_path}{Fore.RESET}"
+                    f"\n  — Name: {name} (ID: {dataset_id})  v{latest_version}"
+                    f"  {Fore.RED}✗ Not found at {original_path}{Fore.RESET}"
                 )
                 continue
 
@@ -56,8 +56,8 @@ def get_status(detailed: bool) -> Tuple[bool, str]:
 
             if live_hash == latest['object_hash']:
                 lines.append(
-                    f"  ✔ {name} (ID: {dataset_id})  v{latest_version}"
-                    f"  — up to date"
+                    f"\n  — Name: {name} (ID: {dataset_id})  Version: {latest_version}"
+                    f"  {Fore.GREEN}✔ Up to date{Fore.RESET}"
                 )
             else:
                 if detailed:
@@ -67,18 +67,18 @@ def get_status(detailed: bool) -> Tuple[bool, str]:
                     )
                     if matched_version is not None:
                         lines.append(
-                            f"  {Fore.YELLOW}- {name} (ID: {dataset_id})  v{latest_version}"
-                            f"  — modified (matches v{matched_version}){Fore.RESET}"
+                            f"\n  — Name: {name} (ID: {dataset_id})  Version: {latest_version}"
+                            f"  {Fore.YELLOW}~ Modified (matches v{matched_version}){Fore.RESET}"
                         )
                     else:
                         lines.append(
-                            f"  {Fore.YELLOW}- {name} (ID: {dataset_id})  v{latest_version}"
-                            f"  — modified (no matching version){Fore.RESET}"
+                            f"\n  — Name: {name} (ID: {dataset_id}) Version: {latest_version}"
+                            f"  {Fore.YELLOW}~ Modified (no version matching the current state found){Fore.RESET}"
                         )
                 else:
                     lines.append(
-                        f"  {Fore.YELLOW}- {name} (ID: {dataset_id})  v{latest_version}"
-                        f"  — modified{Fore.RESET}"
+                        f"\n  — Name: {name} (ID: {dataset_id})  Version: {latest_version}"
+                        f"  {Fore.YELLOW}~ Modified{Fore.RESET}"
                     )
 
         return True, "\n".join(lines)

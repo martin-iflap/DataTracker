@@ -72,7 +72,7 @@ def remove(id: int, name: str, version: float) -> None:
     if (id is None) == (name is None):
         raise click.UsageError("Provide exactly one of --id or --name")
 
-    identifier = f"ID: {id}" if id else f"'{name}'"
+    identifier = f"ID: {id}" if id is not None else f"'{name}'"
     if version is not None:
         confirm_msg = (
             f"Are you sure you want to remove version {version} of dataset {identifier}? "

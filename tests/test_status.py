@@ -53,7 +53,7 @@ def test_status_single_dataset_missing_file(single_dataset, monkeypatch):
     monkeypatch.setattr(status.os.path, "exists", lambda path: False)
     success, message = status.get_status(detailed=False)
     assert success
-    assert "not found at" in message
+    assert "Not found at" in message
 
 def test_status_single_dataset_up_to_date(single_dataset, monkeypatch):
     """Test the status command with a single dataset that has version up to date"""
@@ -62,7 +62,7 @@ def test_status_single_dataset_up_to_date(single_dataset, monkeypatch):
     monkeypatch.setattr(status.fu, "hash_file", lambda path: "fakehash")
     success, message = status.get_status(detailed=False)
     assert success
-    assert "up to date" in message
+    assert "Up to date" in message
 
 def test_status_single_dataset_modified_no_detail(single_dataset, monkeypatch):
     """Test the status command with a single dataset that has been modified without detailed flag"""
@@ -71,7 +71,7 @@ def test_status_single_dataset_modified_no_detail(single_dataset, monkeypatch):
     monkeypatch.setattr(status.fu, "hash_file", lambda path: "different_hash")
     success, message = status.get_status(detailed=False)
     assert success
-    assert "modified" in message
+    assert "Modified" in message
     assert "matches" not in message
     assert "no matching version" not in message
 
@@ -86,7 +86,7 @@ def test_status_single_dataset_modified_with_detail(single_dataset, monkeypatch)
     ])
     success, message = status.get_status(detailed=True)
     assert success
-    assert "modified (matches v0.9)" in message
+    assert "Modified (matches v0.9)" in message
 
 def test_status_single_dataset_modified_no_matching_version(single_dataset, monkeypatch):
     """Test the status command with single dataset and modified with detailed flag but no matching version in history"""
@@ -99,4 +99,4 @@ def test_status_single_dataset_modified_no_matching_version(single_dataset, monk
     ])
     success, message = status.get_status(detailed=True)
     assert success
-    assert "modified (no matching version)" in message
+    assert "Modified (no version matching the current state found)" in message
