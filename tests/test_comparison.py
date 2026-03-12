@@ -1,5 +1,6 @@
 from data_tracker import comparison as comp
 from data_tracker import db_manager as db
+from data_tracker import core
 import shutil
 import os
 
@@ -51,24 +52,16 @@ def test_compare_identical_files(tmp_path):
     """Test the compare_files function with two identical text files
      - similarity should be 100%, added and removed lines should be 0
     """
-    objects_dir = tmp_path / "objects"
-    objects_dir.mkdir()
+    file1 = tmp_path / "file1.txt"
+    file2 = tmp_path / "file2.txt"
+    file1.write_text("line1\nline2\n")
+    file2.write_text("line1\nline2\n")
 
-    hash1 = "abc123"
-    hash2 = "def456"
-    (objects_dir / hash1).write_text("line1\nline2\n")
-    (objects_dir / hash2).write_text("line1\nline2\n")
-
-    similarity, added, removed = comp.compare_files(str(tmp_path), hash1, hash2)
+    similarity, added, removed = comp.compare_files(str(file1), str(file2))
 
     assert similarity == 100.0
     assert added == 0
     assert removed == 0
-
-    try:
-        shutil.rmtree(str(objects_dir), ignore_errors=True)
-    except:
-        raise
 
 def test_compare_text_files(tmp_path):
     """Test the compare_files function with two text files that have some differences
@@ -76,48 +69,32 @@ def test_compare_text_files(tmp_path):
        and check that the similarity is between 0 and 100 and that
        the added and removed lines are correctly counted
     """
-    objects_dir = tmp_path / "objects"
-    objects_dir.mkdir()
+    file1 = tmp_path / "file1.txt"
+    file2 = tmp_path / "file2.txt"
+    file1.write_text("line1\nline2\n")
+    file2.write_text("line1\nmodified\n")
 
-    hash1 = "abc123"
-    hash2 = "def456"
-    (objects_dir / hash1).write_text("line1\nline2\n")
-    (objects_dir / hash2).write_text("line1\nmodified\n")
-
-    similarity, added, removed = comp.compare_files(str(tmp_path), hash1, hash2)
+    similarity, added, removed = comp.compare_files(str(file1), str(file2))
 
     assert 0 < similarity < 100
     assert added == 1
     assert removed == 1
-
-    try:
-        shutil.rmtree(str(objects_dir), ignore_errors=True)
-    except:
-        raise
 
 def test_compare_binary_files(tmp_path):
     """Test the compare_files function with two slightly different binary files
      - create two binary files with the same content except for one byte
      - check 0 < similarity < 100 and added and removed are None
     """
-    objects_dir = tmp_path / "objects"
-    objects_dir.mkdir()
+    file1 = tmp_path / "binary1.bin"
+    file2 = tmp_path / "binary2.bin"
+    file1.write_bytes(b'\x00\x01\x02\x03')
+    file2.write_bytes(b'\x00\x01\xFF\x03')
 
-    hash1 = "binary1"
-    hash2 = "binary2"
-    (objects_dir / hash1).write_bytes(b'\x00\x01\x02\x03')
-    (objects_dir / hash2).write_bytes(b'\x00\x01\xFF\x03')
-
-    similarity, added, removed = comp.compare_files(str(tmp_path), hash1, hash2)
+    similarity, added, removed = comp.compare_files(str(file1), str(file2))
 
     assert similarity == 75.0
     assert added is None
     assert removed is None
-
-    try:
-        shutil.rmtree(str(objects_dir), ignore_errors=True)
-    except:
-        raise
 
 # --------------------------    TESTS FOR compare_dataset_versions -------------------
 
@@ -438,25 +415,170 @@ class TestCompareDatasetVersions:
         assert success is False
         assert "needs at least 2 versions" in message
 
+    def test_compare_with_invalid_version(self, tmp_path):
+        """Test comparison fails gracefully with invalid version number
+         - use simpler setup with direct DB manipulation to create a dataset
+           and then attempt to compare with a version that doesn't exist
+        """
+        db_path = tmp_path / "tracker.db"
+        db.initialize_database(str(db_path))
 
-def test_compare_with_invalid_version(tmp_path):
-    """Test comparison fails gracefully with invalid version number
-     - use simpler setup with direct DB manipulation to create a dataset
-       and then attempt to compare with a version that doesn't exist
+        with db.open_database(str(db_path)) as conn:
+            dataset_id = db.insert_dataset(conn, "test-dataset", None)
+            conn.commit()
+
+        success, message = comp.compare_dataset_versions(dataset_id, None, 1.0, 999.0)
+
+        assert success is False
+        assert "No files found" in message or "invalid" in message.lower()
+
+        try:
+            shutil.rmtree(str(db_path), ignore_errors=True)
+        except:
+            raise
+
+
+class TestDiffDataset:
+    """Test the diff_dataset function.
+    Uses real files on disk tracked via core.add_data so that original_path
+    in the DB points to an actual file.
     """
-    db_path = tmp_path / "tracker.db"
-    db.initialize_database(str(db_path))
 
-    with db.open_database(str(db_path)) as conn:
-        dataset_id = db.insert_dataset(conn, "test-dataset", None)
-        conn.commit()
+    @staticmethod
+    def _add_dataset(temp_tracker_dir, file_path: str, content: str,
+                     version: float = 1.0, message: str = "v1") -> int:
+        """Write content to file_path, track it, return dataset_id."""
+        with open(file_path, 'w') as f:
+            f.write(content)
+        success, msg = core.add_data(file_path, "test-dataset", version, message)
+        assert success, f"add_data failed: {msg}"
+        db_path = temp_tracker_dir['db_path']
+        with db.open_database(db_path) as conn:
+            return db.get_id_from_name(conn, "test-dataset")
 
-    success, message = comp.compare_dataset_versions(dataset_id, None, 1.0, 999.0)
+    def test_diff_no_tracker(self, monkeypatch):
+        """diff_dataset returns failure when no tracker is found."""
+        monkeypatch.setattr('data_tracker.file_utils.find_data_tracker_root', lambda: None)
+        success, message = comp.diff_dataset(1, None, None)
+        assert success is False
+        assert "not initialized" in message
 
-    assert success is False
-    assert "No files found" in message or "invalid" in message.lower()
+    def test_diff_no_versions(self, temp_tracker_dir):
+        """diff_dataset returns failure when dataset has no versions."""
+        db_path = temp_tracker_dir['db_path']
+        with db.open_database(db_path) as conn:
+            dataset_id = db.insert_dataset(conn, "empty-dataset", None)
+            conn.commit()
+        success, message = comp.diff_dataset(dataset_id, None, None)
+        assert success is False
+        assert "No versions found" in message
 
-    try:
-        shutil.rmtree(str(db_path), ignore_errors=True)
-    except:
-        raise
+    def test_diff_file_up_to_date(self, temp_tracker_dir, tmp_path):
+        """diff_dataset reports no differences when live file matches stored version."""
+        file_path = str(tmp_path / "data.csv")
+        dataset_id = self._add_dataset(temp_tracker_dir, file_path, "col1,col2\n1,2\n")
+
+        success, message = comp.diff_dataset(dataset_id, None, None)
+        assert success is True
+        assert "No differences" in message
+
+    def test_diff_file_modified(self, temp_tracker_dir, tmp_path):
+        """diff_dataset detects when the live file has been modified since last version."""
+        file_path = str(tmp_path / "data.csv")
+        dataset_id = self._add_dataset(temp_tracker_dir, file_path, "col1,col2\n1,2\n")
+
+        # Modify live file after tracking
+        with open(file_path, 'w') as f:
+            f.write("col1,col2\n1,2\n3,4\n")
+
+        success, message = comp.diff_dataset(dataset_id, None, None)
+        assert success is True
+        assert "Modified files" in message
+        assert "data.csv" in message
+
+    def test_diff_live_file_missing(self, temp_tracker_dir, tmp_path):
+        """diff_dataset returns a clear error when the live file no longer exists."""
+        file_path = str(tmp_path / "data.csv")
+        dataset_id = self._add_dataset(temp_tracker_dir, file_path, "col1,col2\n1,2\n")
+
+        os.remove(file_path)
+
+        success, message = comp.diff_dataset(dataset_id, None, None)
+        assert success is False
+        assert "not found" in message.lower()
+
+    def test_diff_specific_version(self, temp_tracker_dir, tmp_path):
+        """diff_dataset diffs against the specified version, not just latest."""
+        file_path = str(tmp_path / "data.csv")
+
+        # v1
+        with open(file_path, 'w') as f:
+            f.write("col1\n1\n")
+        success, msg = core.add_data(file_path, "test-dataset", 1.0, "v1")
+        assert success, msg
+
+        # v2 — update with different content
+        with open(file_path, 'w') as f:
+            f.write("col1\n1\n2\n")
+        db_path = temp_tracker_dir['db_path']
+        with db.open_database(db_path) as conn:
+            dataset_id = db.get_id_from_name(conn, "test-dataset")
+        success, msg = core.update_data(file_path, dataset_id, None, 2.0, "v2")
+        assert success, msg
+
+        # live file now matches v2 — diffing against v1 should show differences
+        success, message = comp.diff_dataset(dataset_id, None, 1.0)
+        assert success is True
+        assert "Modified files" in message
+
+    def test_diff_by_name(self, temp_tracker_dir, tmp_path):
+        """diff_dataset resolves dataset by name when id is None."""
+        file_path = str(tmp_path / "data.csv")
+        self._add_dataset(temp_tracker_dir, file_path, "a,b\n1,2\n")
+
+        success, message = comp.diff_dataset(None, "test-dataset", None)
+        assert success is True
+        assert "No differences" in message
+
+    def test_diff_invalid_version(self, temp_tracker_dir, tmp_path):
+        """diff_dataset returns failure when specified version does not exist."""
+        file_path = str(tmp_path / "data.csv")
+        dataset_id = self._add_dataset(temp_tracker_dir, file_path, "a,b\n1,2\n")
+
+        success, message = comp.diff_dataset(dataset_id, None, 99.0)
+        assert success is False
+        assert "No files found" in message
+
+    def test_diff_directory_with_nested_structure(self, temp_tracker_dir, tmp_path):
+        """diff_dataset correctly detects changes in a tracked directory.
+        Builds a real nested folder structure, tracks it, modifies one file
+        and adds another, then verifies diff reports both changes.
+        """
+        dataset_dir = tmp_path / "my_dataset"
+        sub_dir = dataset_dir / "subdir"
+        sub_dir.mkdir(parents=True)
+
+        (dataset_dir / "root_file.csv").write_text("id,value\n1,100\n")
+        (sub_dir / "nested_file.csv").write_text("id,value\n2,200\n")
+
+        success, msg = core.add_data(str(dataset_dir), "dir-dataset", 1.0, "initial")
+        assert success, f"add_data failed: {msg}"
+
+        db_path = temp_tracker_dir['db_path']
+        with db.open_database(db_path) as conn:
+            dataset_id = db.get_id_from_name(conn, "dir-dataset")
+
+        # Modify one existing file and add a new one
+        (dataset_dir / "root_file.csv").write_text("id,value\n1,100\n2,999\n")
+        (sub_dir / "new_file.csv").write_text("id,value\n3,300\n")
+
+        success, message = comp.diff_dataset(dataset_id, None, None)
+
+        assert success is True
+        assert "Modified files" in message
+        assert "root_file.csv" in message
+        assert "Added files" in message
+        assert "new_file.csv" in message
+        assert "No files removed." in message
+
+        shutil.rmtree(str(dataset_dir), ignore_errors=True)

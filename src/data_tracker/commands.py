@@ -349,5 +349,28 @@ def status(detailed: bool) -> None:
         click.secho(f"Error: {e}", fg="red", err=True)
         sys.exit(1)
 
+@click.command()
+@click.option("--id", type=int, default=None, help="ID of the dataset")
+@click.option("--name", default=None, help="Name of the dataset")
+@click.option("-v", "--version", type=float, default=None,
+              help="Version to diff against (defaults to latest)")
+def diff(id: int, name: str, version: float) -> None:
+    """Preview differences between the live file and a stored version"""
+    if (id is None) == (name is None):
+        raise click.UsageError("Provide exactly one of --id or --name")
+    try:
+        success, message = comparison.diff_dataset(id, name, version)
+        if success:
+            click.echo(message)
+        else:
+            click.secho(message, fg="red")
+    except Exception as e:
+        click.secho(f"Error: {e}", fg="red", err=True)
+        sys.exit(1)
 
 
+
+# dataset tagging (like git tags)
+# tests for diff command
+# batch file operations like export all
+# add a delete tracker command with dry run flag??
