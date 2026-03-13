@@ -1,5 +1,5 @@
 import data_tracker.db_manager as db
-from colorama import Fore, init # init colorama in get_stats
+from colorama import Fore, init # init colorama in get_stats and delete_data_tracker
 from typing import Tuple
 import subprocess
 import tempfile
@@ -347,3 +347,37 @@ def get_storage_stats() -> Tuple[bool, str]:
                       f"Total size: {Fore.YELLOW}{format_size(total_size)}{Fore.RESET}")
     except OSError as e:
         return False, f"Filesystem error while calculating stats: {e}"
+
+def delete_data_tracker(tracker_path: str, dry_run: bool) -> Tuple[bool, str]:
+    """Delete the entire .data_tracker directory and all its contents
+     - Use with extreme caution; this is irreversible
+     - Deletes all datasets, versions, objects, and the database itself
+     With the dry_run flag:
+      - show what files would get deleted
+    Returns: Tuple[bool, str]: (success, message)
+    """
+    try:
+        init()
+
+        if not os.path.exists(tracker_path):
+            return False, f"Data tracker directory not found at: {tracker_path}"
+
+        if not dry_run:
+            shutil.rmtree(tracker_path)
+            return True, f"Data tracker at {tracker_path} has been deleted successfully."
+        else:
+            deleted_items = []
+            for root, dirs, files in os.walk(tracker_path):
+                for name in files:
+                    deleted_items.append(os.path.join(root, name))
+                for name in dirs:
+                    deleted_items.append(os.path.join(root, name))
+            if not deleted_items:
+                return True, f"DataTracker at {tracker_path} is already empty."
+            else:
+                message = (f"{Fore.YELLOW}Path of the DataTracker:{Fore.RESET} {tracker_path}\n"
+                           f"{Fore.RED}The following files and directories would be deleted:{Fore.RESET}\n")
+                message += "\n".join(deleted_items)
+                return True, message
+    except OSError as e:
+        return False, f"Failed to delete data tracker at {tracker_path}: {e}"

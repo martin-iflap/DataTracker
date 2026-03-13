@@ -42,7 +42,7 @@ def initialize_database(db_path: str) -> Tuple[bool, str]:
                          id INTEGER PRIMARY KEY AUTOINCREMENT,
                          dataset_id INTEGER NOT NULL,
                          object_hash TEXT NOT NULL,
-                         version INTEGER NOT NULL,
+                         version REAL NOT NULL,
                          original_path TEXT,
                          message TEXT,
                          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

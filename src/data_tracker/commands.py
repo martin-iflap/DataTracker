@@ -232,7 +232,7 @@ def transform(preset: str, image: str, input_data: str, output_data: str,
         if preset:
             if not tp.preset_exists(tracker_path, preset):
                 click.secho(f"Error: Preset '{preset}' not found", fg="red")
-                click.secho("Run 'dt preset list' to see available presets (coming soon)", fg="yellow")
+                click.secho("Run 'dt preset ls' to see available presets.", fg="yellow")
                 sys.exit(1)
 
         if not preset:
@@ -261,7 +261,8 @@ def transform(preset: str, image: str, input_data: str, output_data: str,
         else:
             click.secho(message, fg="red")
             sys.exit(1)
-
+    except click.ClickException:
+        raise
     except Exception as e:
         click.secho(f"Error: {e}", fg="red", err=True)
         sys.exit(1)
@@ -335,7 +336,7 @@ def annotate(new_message: str, id: int, name: str, version: float, latest: bool,
         sys.exit(1)
 
 @click.command()
-@click.option("-d", "--detailed", type=bool, is_flag=True,
+@click.option("-d", "--detailed", is_flag=True,
               default=False, help="Show detailed information about tracked datasets")
 def status(detailed: bool) -> None:
     """Show the status of tracked datasets"""
@@ -368,9 +369,36 @@ def diff(id: int, name: str, version: float) -> None:
         click.secho(f"Error: {e}", fg="red", err=True)
         sys.exit(1)
 
+@click.command()
+@click.option("--dry-run", is_flag=True, default=False, help="Dry run")
+def delete_tracker(dry_run: bool) -> None:
+    """Delete the entire .data_tracker directory and all its content"""
+    try:
+        tracker_path = fu.find_data_tracker_root()
+        if tracker_path is None:
+            click.secho("Data tracker is not initialized. Please run 'dt init' first.", fg="red")
+            sys.exit(1)
+    except Exception as e:
+        click.secho(f"Error locating the .data_tracker directory: {e}", fg="red", err=True)
+        sys.exit(1)
+
+    if not dry_run:
+        confirm_msg = (f"Are you sure you want to delete the entire DataTracker on path: {tracker_path}?"
+                       f"\nThis action cannot be undone!")
+        click.confirm(confirm_msg, abort=True)
+
+    try:
+        success, message = fu.delete_data_tracker(tracker_path, dry_run)
+        if success:
+            click.echo(message)
+        else:
+            click.secho(message, fg="red")
+    except Exception as e:
+        click.secho(f"Error: {e}", fg="red", err=True)
+        sys.exit(1)
 
 
-# dataset tagging (like git tags)
-# tests for diff command
-# batch file operations like export all
-# add a delete tracker command with dry run flag??
+
+# FUTURE IMPROVEMENTS TO BE MADE:
+# - Dataset tagging (like git tags)
+# - Batch file operations like  'dt export all'

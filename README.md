@@ -15,8 +15,10 @@ Track dataset versions, compare changes, and transform data using Docker contain
 - Docker integration for reproducible transformations
 - Transform presets for saving and reusing common transformation configurations
 - Compare versions with text diffs and binary similarity metrics
+- Diff the live working state against a stored version
 - Export any version to any location
 - Monitor storage usage across datasets
+- Show per-dataset status and safely delete an entire tracker
 
 ## Installation
 
@@ -135,6 +137,23 @@ Options:
 ```bash
 dt ls
 dt ls --structure
+```
+
+
+#### `dt status`
+Show whether each tracked dataset is up to date, modified, or missing on disk.
+
+```bash
+dt status [OPTIONS]
+
+Options:
+  -d, --detailed  Also show whether current content matches an older tracked version
+```
+
+**Examples:**
+```bash
+dt status
+dt status --detailed
 ```
 
 
@@ -282,6 +301,30 @@ dt compare --id 1
 - Binary similarity percentage for non-text files
 
 
+#### `dt diff`
+Compare the current live dataset state on disk against a stored version.
+
+```bash
+dt diff [OPTIONS]
+
+Options:
+  --id INT            Dataset ID
+  --name TEXT         Dataset name
+  -v, --version FLOAT Version to diff against (defaults to latest)
+
+Note: Provide exactly one of --id or --name.
+```
+
+**Examples:**
+```bash
+# Diff against latest version
+dt diff --name sales-data
+
+# Diff against a specific stored version
+dt diff --id 1 --version 1.0
+```
+
+
 #### `dt export`
 Export a specific version of a dataset to a given path.
 
@@ -385,6 +428,26 @@ dt storage
 Shows the total number of stored object files and their combined size on disk.
 
 
+#### `dt delete-tracker`
+Delete the entire `.data_tracker` directory in the current project tree.
+
+```bash
+dt delete-tracker [OPTIONS]
+
+Options:
+  --dry-run  Preview which files/directories would be deleted without deleting anything
+```
+
+**Examples:**
+```bash
+# Preview what would be removed
+dt delete-tracker --dry-run
+
+# Permanently delete the tracker (with confirmation prompt)
+dt delete-tracker
+```
+
+
 ### Transform Presets
 
 Transform presets let you save a transformation configuration — image, command, flags, and message — and reuse it by name instead of repeating all options on every run. Presets are stored in `.data_tracker/presets_config.json`, which is created automatically when you run `dt init`.
@@ -436,7 +499,25 @@ dt transform \
   --message "Override message for this run"
 ```
 
-> **Note:** Preset management commands (`add`, `remove`, `list`) are planned for a future release. For now, presets are managed by editing `presets_config.json` directly.
+You can also manage presets directly from the CLI:
+
+```bash
+# List presets
+dt preset ls
+
+# List presets with full details
+dt preset ls --detailed (or -d)
+
+# Add a preset
+dt preset add my-clean-step \
+  --image python:3.11-slim \
+  --command "python /input/clean.py --output /output/result.csv" \
+  --auto-track \
+  --message "Reusable cleaning step"
+
+# Remove a preset
+dt preset remove my-clean-step
+```
 
 
 ## Architecture
@@ -543,11 +624,12 @@ DataTracker/
 │       ├── core.py              # Core add/update/remove/list/history logic
 │       ├── metadata.py          # Rename and annotate operations
 │       ├── transform.py         # Transform execution and versioning logic
-│       ├── transform_preset.py  # Preset load/save/validate
 │       ├── comparison.py        # Version diff and file comparison
+│       ├── status.py            # Live-vs-tracked status reporting
 │       ├── db_manager.py        # All SQLite operations
 │       ├── docker_manager.py    # Docker container execution
-│       └── file_utils.py        # File hashing, export, open, and structure display
+│       ├── file_utils.py        # File hashing, export, open, and structure display
+│       └── transform_preset/    # Preset CLI and CRUD helpers
 ├── tests/                       # Pytest test suite
 ├── pyproject.toml               # Project and dependency configuration
 └── README.md

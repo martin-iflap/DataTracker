@@ -7,17 +7,16 @@ import os
 
 def rename_dataset(id: int, old_name: str, new_name: str) -> Tuple[bool, str]:
     """Renames a dataset and returns the new name"""
-    if old_name is None:
-        db_path = os.path.join(fu.find_data_tracker_root(), 'tracker.db')
-        old_name = db.get_dataset_name_from_id(db_path, id)
-
-    if new_name == old_name:
-        return True, f"Dataset name is already '{new_name}'"
-
     tracker_path = fu.find_data_tracker_root()
     if not tracker_path:
         return False, "Data tracker is not initialized. Please run 'dt init' first."
     db_path = os.path.join(tracker_path, 'tracker.db')
+
+    if old_name is None:
+        old_name = db.get_dataset_name_from_id(db_path, id)
+
+    if new_name == old_name:
+        return True, f"Dataset name is already '{new_name}'"
 
     try:
         with db.open_database(db_path) as conn:

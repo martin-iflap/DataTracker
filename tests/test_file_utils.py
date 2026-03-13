@@ -734,3 +734,42 @@ class TestGetStorageStats:
         assert not success
         assert "not initialized" in msg
 
+# -------------------- TESTS: delete_data_tracker -----------------------
+
+class TestDeleteDataTracker:
+    """Test cases for the delete_tracker function"""
+
+    def test_delete_dt_no_tracker(self):
+        """Test the function with wrong tracker_path"""
+        tracker_path = "tracker/path"
+        success, msg = fu.delete_data_tracker(tracker_path, False)
+        assert not success
+        assert "not found" in msg
+
+    def test_delete_dt_dry_run(self, temp_tracker_dir):
+        """Test the function with dry_run=True
+         - assert the tracker was not deleted and message was correct
+        """
+        tracker_path = temp_tracker_dir["tracker_path"]
+
+        success, msg = fu.delete_data_tracker(tracker_path, True)
+
+        assert success
+        assert tracker_path in msg
+        assert "would be deleted" in msg
+        assert tracker_path + "\\objects" in msg
+        assert temp_tracker_dir["db_path"] in msg
+        assert tracker_path + "\\presets_config.json" in msg
+        assert os.path.exists(tracker_path)
+
+    def test_delete_dt_real_run(self, temp_tracker_dir):
+        """Test the function with dry_run=False
+         - assert the tracker was deleted and message was correct
+        """
+        tracker_path = temp_tracker_dir["tracker_path"]
+        success, msg = fu.delete_data_tracker(tracker_path, False)
+
+        assert success
+        assert "deleted successfully" in msg
+        assert not os.path.exists(tracker_path)
+        assert not os.path.exists(temp_tracker_dir["db_path"])

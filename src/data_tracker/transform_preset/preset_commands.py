@@ -15,7 +15,7 @@ def ls(detailed: bool) -> None:
         else:
             click.echo(f"Error: {message}")
     except Exception as e:
-        click.echo(f"Error: {e}", err=True, color="red")
+        click.secho(f"Error: {e}", fg="red", err=True)
         sys.exit(1)
 
 
@@ -36,10 +36,10 @@ def ls(detailed: bool) -> None:
 def add(name: str, image: str, command: str, force: bool,
         auto_track: bool, no_track: bool, message: str) -> None:
     """Add a new transform preset."""
-    try:
-        if auto_track and no_track:
-            raise click.UsageError("Cannot use --auto-track and --no-track together")
+    if auto_track and no_track:
+        raise click.UsageError("Cannot use --auto-track and --no-track together")
 
+    try:
         parameters = {
             "image": image,
             "command": command,
@@ -54,7 +54,7 @@ def add(name: str, image: str, command: str, force: bool,
         else:
             click.echo(f"Error: {result_message}")
     except Exception as e:
-        click.echo(f"Error: {e}", err=True, color="red")
+        click.secho(f"Error: {e}", err=True, fg="red")
         sys.exit(1)
 
 
@@ -70,7 +70,7 @@ def remove(name: str) -> None:
         if success:
             click.echo(message)
         else:
-            click.echo(f"Error: {message}")
+            click.secho(f"Error: {message}")
     except Exception as e:
-        click.echo(f"Error: {e}", err=True, color="red")
+        click.secho(f"Error: {e}", err=True, fg="red")
         sys.exit(1)
