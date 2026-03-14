@@ -1,17 +1,36 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "datatracker"
 version = "0.1.0"
-description = "Add your description here"
+description = "A git-like CLI tool for local dataset versioning, comparison, and Docker-based transforms"
+readme = "README.md"
 requires-python = ">=3.14"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Martin" }
+]
 dependencies = [
     "click>=8.3.1",
     "colorama>=0.4.6",
-    "pytest>=9.0.2",
-    "pytest-cov>=7.0.0",
 ]
 
 [project.scripts]
 dt = "data_tracker.cli:cli"
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+]
+
 [tool.uv]
 package = true
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+]

@@ -27,8 +27,28 @@ Track dataset versions, compare changes, and transform data using Docker contain
 ```bash
 git clone https://github.com/martin-iflap/DataTracker.git
 cd DataTracker
+
+# install the CLI
 pip install -e .
+
+# verify the command is available
 dt --help
+```
+
+If you use `uv`, you can install and sync the project with:
+
+```bash
+uv sync
+```
+
+For development and testing, you can use either `pip` extras or `uv` dependency groups:
+
+```bash
+# pip
+pip install -e ".[dev]"
+
+# uv
+uv sync --group dev
 ```
 
 ## Quick Start
@@ -638,8 +658,11 @@ DataTracker/
 ### Running Tests
 
 ```bash
-# Install with dev dependencies
+# Install with development dependencies (pip)
 pip install -e ".[dev]"
+
+# Or with uv
+uv sync --group dev
 
 # Run all tests
 pytest
